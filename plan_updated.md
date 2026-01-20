@@ -29,7 +29,7 @@ The focus is **NLP fundamentals applied to real clinical text**, not standards e
   - ClinicalBERT (contextual classification)
 - Structured JSON output
 - Lightweight evaluation
-- Clear documentation and reproducibility
+- Clear documentation and reproducibility (notes.md per phase so its easier to navigate, and less detailed to save time)
 
 ### Explicitly Out of Scope (by design)
 - SNOMED ontology mapping
