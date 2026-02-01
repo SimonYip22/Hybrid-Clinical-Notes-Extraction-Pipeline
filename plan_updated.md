@@ -206,5 +206,5 @@ This project belongs under:
 Radnomics belongs under:
 - **Experience** (industry collaboration)
 
-They should *not* compete with each other.
+They should not compete with each other.
 They should reinforce each other.
