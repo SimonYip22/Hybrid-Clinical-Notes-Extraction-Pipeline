@@ -10,6 +10,8 @@
 
 A dual-architecture natural language processing pipeline using a transformer-based (ClinicalBERT) classifier and rule-based entity extraction to process unstructured ICU data and produce formatted clinical text.
 
+This project focuses on classical clinical NLP pipeline design rather than ontology mapping or production deployment.
+
 ---
 
 ## Table of Contents
@@ -17,6 +19,14 @@ A dual-architecture natural language processing pipeline using a transformer-bas
 ---
 
 ## 1. Clinical Background & Motivation
+
+3. Cross-reference projects lightly
+
+In each README:
+	•	One short “Related work” or “Context” section
+	•	No deep linking or shared code
+
+This reinforces cohesion without coupling.
 
 ---
 
