@@ -91,6 +91,14 @@ This project is licensed under the MIT License; see the [LICENSE](LICENSE) file 
 
 ---
 
+## 15. Copyright
+
+---
+
+## 16. Citation
+
+---
+
 ## 20. Acknowledgments
 
 **ChatGPT**
