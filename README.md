@@ -1,4 +1,4 @@
-# Hybrid Clinical Information Extraction Pipeline
+# Hybrid Clinical Notes Extraction Pipeline
 
 ***Hybrid Natural Language Processing Architecture Using ClinicalBERT Classifier & Rule-Based Entity Extraction for Structured Clinical Data***
 
