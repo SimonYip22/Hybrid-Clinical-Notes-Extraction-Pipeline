@@ -12,7 +12,7 @@ This repository presents a dual-architecture natural language processing (NLP) p
 
 Rule-based extraction ensures high-precision identification of clinically relevant patterns, while the fine-tuned ClinicalBERT classifier provides negation handling, entity validation, and contextual disambiguation.
 
-This focused on classical clinical NLP pipeline development rather than ontology mapping, interoperability standards, or production deployment. Model training was performed using credentialed access to the MIMIC-IV-Note: Deidentified free-text clinical notes dataset via PhysioNet, ensuring realistic clinical data handling.
+This focused on classical clinical NLP pipeline development rather than ontology mapping, interoperability standards, or production deployment. Model training was performed using credentialed access to the MIMIC-III dataset via PhysioNet, ensuring realistic clinical data handling.
 
 ---
 

@@ -19,6 +19,12 @@ It does not:
 - Interpret structural implications (see `summary.md`)
 - Define design choices for later phases
 
+
+	•	Phase 1 — Sample Inspection & Profiling
+	•	Small subset of notes (~200)
+	•	Manual review for structure, sections, abbreviations, formatting
+	•	Output: descriptive insights to guide extraction logic
+
 ---
 
 ## 1. Dataset Scope and Size Constraints
@@ -132,3 +138,135 @@ At the conclusion of Phase 1:
 - No rule construction or modelling has been initiated.
 
 Any deviation from these constraints requires formal revision of this document.
+
+1. Phase 1 — Working Corpus (n ≈ 200)
+	•	Purpose: rapid iteration, debugging, and rule validation.
+	•	Selection: stratified sampling across ICU types, note authors, and lengths to capture variability.
+	•	Activities:
+	•	Test preprocessing pipeline (JSON conversion, time window filtering, CATEGORY restrictions, ISERROR removal).
+	•	Identify structural patterns for extraction rules.
+	•	Validate metadata joins (PATIENTS → ICUSTAYS → NOTEEVENTS).
+	•	Outcome: reliable rules and deterministic scripts ready to scale.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Phase 1 — Minimal Required Columns and Preprocessing Decisions
+
+---
+
+## 1. Required Tables and Columns
+
+### PATIENTS
+- **SUBJECT_ID** → unique patient identifier (to join with notes and ICU stays)
+- **DOB** → calculate age at ICU admission
+- **GENDER** → optional metadata for JSON
+
+### ICUSTAYS
+- **SUBJECT_ID** → join to patient
+- **HADM_ID** → technically only needed to join to NOTEEVENTS, because that table has both SUBJECT_ID and HADM_ID
+- **ICUSTAY_ID** → essential; identifies the ICU stay you want to extract notes for
+- **FIRST_CAREUNIT** → optional metadata for JSON (ICU type, e.g., MICU, SICU)
+- **INTIME / OUTTIME** → calculate ICU length of stay (LOS) in hours
+
+> **Note:** ICUSTAY_ID is crucial. HADM_ID ensures you correctly match notes to the hospital admission associated with the ICU stay. Notes in MIMIC are recorded per hospital admission (HADM_ID), not per ICU stay, so HADM_ID + SUBJECT_ID ensures the correct ICU’s notes are pulled.
+
+### NOTEEVENTS
+- **SUBJECT_ID + HADM_ID** → required to join to ICU stays correctly
+- **CHARTDATE / CHARTTIME / STORETIME** → required to filter notes within first 24–48 hours of ICU admission
+- **CATEGORY** → restrict to physician/nursing notes
+- **DESCRIPTION** → sometimes used to identify “Progress Note” or “Nursing Note,” but optional
+- **ISERROR** → flag for corrupted or erroneous rows (1 = invalid); filter these out
+- **TEXT** → main NLP content
+
+---
+
+## 2. Minimal Required Columns Summary
+
+| Table       | Required Columns                             | Purpose                                             |
+|------------|----------------------------------------------|---------------------------------------------------|
+| PATIENTS   | SUBJECT_ID, DOB                              | Join & calculate age                               |
+| ICUSTAYS   | SUBJECT_ID, ICUSTAY_ID, HADM_ID, FIRST_CAREUNIT, INTIME, OUTTIME | Identify ICU stay, filter ICU type, calculate LOS, define note window |
+| NOTEEVENTS | SUBJECT_ID, HADM_ID, CHARTTIME, CATEGORY, ISERROR, TEXT | Extract ICU notes in first X hours, exclude errors, main text |
+
+---
+
+## 3. Filtering / Scope Rules
+
+### A. Adult Patients
+- Age ≥ 18 at ICU admission → `(INTIME - DOB) >= 18 years`
+- Excludes pediatric patients (standard cohort)
+
+### B. ICU Filtering
+- No ICU ID exists in NOTEEVENTS → use HADM_ID + ICUSTAY INTIME/OUTTIME to select notes for that ICU stay
+- Ensures notes belong to the correct hospital admission
+- HADM_ID is needed because patients may have multiple admissions
+
+### C. Hospital / ICU Length of Stay
+- Filter ICU stays ≥ 48 hours
+- Reason: short stays often have limited notes for NLP extraction
+- Optional: reduce to 24 hours for smaller scope; still sufficient for ~200 notes
+
+### D. Notes Within First X Hours
+- Include notes where:  
+  `(NOTE CHARTTIME - ICUSTAY INTIME) <= 24 or 48 hours`
+- 24 hours → smaller, concise, early signals  
+- 48 hours → more notes, slightly more preprocessing
+
+### E. Note Type / Author
+- Include only:
+  - Physician notes: `CATEGORY='Physician'` or `DESCRIPTION='Progress Note'`
+  - Nursing notes: `CATEGORY='Nursing'` or `DESCRIPTION='Nursing/Other'`
+- Options: physician only, nurse only, or both (richer context)
+- Exclude: radiology, discharge summaries (or use only for validation)
+
+### F. Exclude Errors
+- `ISERROR=1` → remove
+- Ensures clean text
+
+---
+
+## 4. Joining Logic for Preprocessing
+
+1. Join `PATIENTS → ICUSTAYS` via `SUBJECT_ID` → get age, sex, ICU LOS
+2. Filter `ICUSTAYS` by age ≥ 18 and LOS ≥ 24–48 hours
+3. Join `ICUSTAYS → NOTEEVENTS` via `SUBJECT_ID + HADM_ID`
+4. Filter `NOTEEVENTS` by:
+   - Notes within first 24–48 hours of ICU admission
+   - CATEGORY / DESCRIPTION (physician/nursing)
+   - ISERROR=0
+
+> **Result:** curated set of early ICU clinical notes with metadata (age, sex, ICU type) ready for NLP extraction
+
+---
+
+## 5. Constraint Table
+
+| Constraint       | Recommendation        | Reason                                                         |
+|-----------------|---------------------|---------------------------------------------------------------|
+| Age              | ≥ 18                | Standard adult ICU cohort                                     |
+| ICU LOS          | ≥ 24 hours          | Sufficient content; reduces trivial / short stays            |
+| Notes time window| 24 hours            | Smaller, high-quality corpus; manageable preprocessing       |
+| Note authors     | Physician + Nurse   | Richer clinical signals; can filter to one type if simpler   |
+| Note category    | Progress / Nursing  | Exclude radiology, discharge, lab-only comments              |
+| Exclude errors   | ISERROR=1           | Clean text only                                               |
+
+---
+
+## 6. Expected Outcome
+- ~200–300 notes selected → matches NLP pipeline requirements  
+- Notes are early, focused, manageable for a 4-week project  
+- Metadata allows cohort description and basic filtering without “cheating” — all clinical content still comes from free text
