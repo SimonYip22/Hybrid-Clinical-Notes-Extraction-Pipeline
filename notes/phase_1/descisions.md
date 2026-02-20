@@ -170,6 +170,8 @@ Any deviation from these constraints requires formal revision of this document.
 
 ## 1. Required Tables and Columns
 
+Inspected all columns and retained the only ones we needed
+
 ### PATIENTS
 - **SUBJECT_ID** → unique patient identifier (to join with notes and ICU stays)
 - **DOB** → calculate age at ICU admission
@@ -204,21 +206,62 @@ Any deviation from these constraints requires formal revision of this document.
 
 ---
 
+## Data Inspection
+
+**NOTEEVENTS**
+- `CATEGORIES` and `DESCRIPTION` columns were examined via frequency analysis.
+- Only clinical progress documentation was retained: `ALLOWED_CATEGORIES = {"physician", "nursing", "nursing/other"}`
+- Radiology, ECG, echo, discharge summaries, and other non-progress documentation were excluded.
+- `DESCRIPTION` was not used for filtering due to high granularity and redundancy once `CATEGORY` was restricted
+
+**ICUSTAYS**
+- `FIRST_CAREUNIT` values were examined via frequency analysis.
+- Neonatal ICU (NICU) was excluded to restrict the cohort to adult ICU stays: `ALLOWED_UNITS = {"MICU", "CCU", "SICU", "TSICU", "CSRU"}`
+
+---
+
 ## 3. Filtering / Scope Rules
 
-### A. Adult Patients
-- Age ≥ 18 at ICU admission → `(INTIME - DOB) >= 18 years`
-- Excludes pediatric patients (standard cohort)
+aim: Early ICU progress notes from adult ICU stays lasting ≥ 24 hours.
 
-### B. ICU Filtering
-- No ICU ID exists in NOTEEVENTS → use HADM_ID + ICUSTAY INTIME/OUTTIME to select notes for that ICU stay
-- Ensures notes belong to the correct hospital admission
-- HADM_ID is needed because patients may have multiple admissions
+### Define Valid ICU Stays
 
-### C. Hospital / ICU Length of Stay
-- Filter ICU stays ≥ 48 hours
-- Reason: short stays often have limited notes for NLP extraction
-- Optional: reduce to 24 hours for smaller scope; still sufficient for ~200 notes
+filter rows of ICU stays to inly include stays greater than 24hrs and also non NICU
+The ICU stay is the anchor, everything else (notes, patients) is attached to that stay.
+
+- Filter rows based on care unit (remove NICU)
+- Claculate LOS in hours `LOS_HOURS` and add as new column
+- Filter ICU stays ≥ 24 hours
+- Reason: short stays often have limited notes for NLP extraction, we need suffiicent clinical narrative, stabilkises datatset
+
+defined a cohort of ICU patients we can use
+
+### Define Valid Adult ICU Stays 
+
+ICUSTAYS does not contain age, therefore we ust combine PATEINTS which contains DOB with ICUSTAYS
+
+- Merge DOB column from PATIENTS into ICUSTAYS based on matching SUBJECT_ID
+- Calculate AGE at ICU admission and add column into ICUSTAYS → AGE = (ICU admission date − birth date)
+- Filter age ≥ 18 at ICU admission → `AGE >= 18 years`
+- Reason: Removes adolescents and paediatric stays, now cohort contains adult stay, correct ICU types, and LOS ≥ 24 hours
+
+### Filter Notes
+
+Filter rows of notes to exclude errors and keep only progress notes
+
+- Filter rows to only keep notes for phycisians and nurses only
+- Exclude Errors: `ISERROR=1` → remove, Ensures clean text
+
+
+Time window filtering 
+
+INTIME ≤ CHARTTIME ≤ INTIME + 24 hours
+
+reason: Without this filter, you would include:
+	•	Notes written before ICU
+	•	Notes written days later
+	•	Notes unrelated to early deterioration
+
 
 ### D. Notes Within First X Hours
 - Include notes where:  
@@ -226,16 +269,7 @@ Any deviation from these constraints requires formal revision of this document.
 - 24 hours → smaller, concise, early signals  
 - 48 hours → more notes, slightly more preprocessing
 
-### E. Note Type / Author
-- Include only:
-  - Physician notes: `CATEGORY='Physician'` or `DESCRIPTION='Progress Note'`
-  - Nursing notes: `CATEGORY='Nursing'` or `DESCRIPTION='Nursing/Other'`
-- Options: physician only, nurse only, or both (richer context)
-- Exclude: radiology, discharge summaries (or use only for validation)
 
-### F. Exclude Errors
-- `ISERROR=1` → remove
-- Ensures clean text
 
 ---
 
