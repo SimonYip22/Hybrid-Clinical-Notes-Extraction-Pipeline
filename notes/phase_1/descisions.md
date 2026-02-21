@@ -220,7 +220,7 @@ Inspected all columns and retained the only ones we needed
 
 ---
 
-## 3. Filtering / Scope Rules
+## Filtering / Scope Rules
 
 aim: Early ICU progress notes from adult ICU stays lasting ≥ 24 hours.
 
@@ -250,24 +250,26 @@ ICUSTAYS does not contain age, therefore we ust combine PATEINTS which contains 
 Filter rows of notes to exclude errors and keep only progress notes
 
 - Filter rows to only keep notes for phycisians and nurses only
-- Exclude Errors: `ISERROR=1` → remove, Ensures clean text
+- Exclude Errors: `ISERROR!=1` → keep anyrow where error isnt 1, as normal notes can be NaN or 0, Ensures clean text
 
+Row counts were logged after each major filtering step to ensure cohort integrity and detect unintended full-row elimination. During development, filtering on ISERROR == 0 removed all notes because valid entries in MIMIC-III often have ISERROR = NaN. The logic was revised to exclude only ISERROR == 1, preserving valid records while removing true error notes.
 
 Time window filtering 
 
+for notes with charttime recorded after the ICU admission but within 24 hours of admission
+ 
 INTIME ≤ CHARTTIME ≤ INTIME + 24 hours
 
 reason: Without this filter, you would include:
-	•	Notes written before ICU
+	•	Notes written before ICU stay
 	•	Notes written days later
-	•	Notes unrelated to early deterioration
+	•	Notes unrelated to early deterioration (>24hrs)
 
 
 ### D. Notes Within First X Hours
 - Include notes where:  
-  `(NOTE CHARTTIME - ICUSTAY INTIME) <= 24 or 48 hours`
+  `(NOTE CHARTTIME - ICUSTAY INTIME) <= 24 hours`
 - 24 hours → smaller, concise, early signals  
-- 48 hours → more notes, slightly more preprocessing
 
 
 
@@ -297,6 +299,36 @@ reason: Without this filter, you would include:
 | Note authors     | Physician + Nurse   | Richer clinical signals; can filter to one type if simpler   |
 | Note category    | Progress / Nursing  | Exclude radiology, discharge, lab-only comments              |
 | Exclude errors   | ISERROR=1           | Clean text only                                               |
+
+---
+
+## final stats
+
+Initial NOTES: 2083180
+Initial PATIENTS: 46520
+After unit filter: 53432
+After adult age filter: 45278
+After category filter: 1187677
+After error filter: 1186960
+After ICU merge: 888224
+After 24h time window: 162296
+Unique ICU stays: 32910
+Number of reports: 162296
+Number of columns: 10
+
+Retention of early-window notes ≈ 18.3% of ICU-linked notes.
+This is plausible for a 24-hour restriction.
+
+~72.7% of adult ICU stays have at least one qualifying note in first 24h.
+
+162,296 / 32,910 ≈ 4.93 notes per ICU stay 
+
+ realistic for:
+	•	Nursing notes
+	•	Physician documentation
+	•	First 24 hours
+
+Error filter behaviour Very small reduction → consistent with MIMIC where ISERROR rarely equals 1.
 
 ---
 
