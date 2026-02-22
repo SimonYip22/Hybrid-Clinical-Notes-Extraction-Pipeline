@@ -164,15 +164,13 @@ Any deviation from these constraints requires formal revision of this document.
 
 
 
-# Dataset Decisions — ICU Early Note Corpus (MIMIC-III)
+# Dataset Decisions — ICU Early Note Corpus
 
 ## 1. Purpose
 
-This document specifies the exact cohort definition, filtering logic, and design decisions used to construct the ICU early-note corpus from MIMIC-III.
-
-It serves as the formal reproducibility and audit specification for `build_corpus.py`.
-
-All logic described here reflects the final, validated implementation.
+- This document specifies the exact cohort definition, filtering logic, and design decisions used to construct the ICU early-note corpus from MIMIC-III.
+- It serves as the formal reproducibility and audit specification for `build_corpus.py`.
+- All logic described here reflects the final, validated implementation.
 
 ---
 
@@ -184,9 +182,9 @@ Only minimal required columns were loaded to reduce memory usage and prevent acc
 
 | Column       | Purpose                          |
 |-------------|----------------------------------|
-| SUBJECT_ID  | Patient-level join key           |
-| DOB         | Age calculation                  |
-| GENDER      | Demographic metadata             |
+| `SUBJECT_ID`  | Patient-level join key           |
+| `DOB`         | Age calculation                  |
+| `GENDER`      | Demographic metadata             |
 
 ---
 
@@ -194,17 +192,17 @@ Only minimal required columns were loaded to reduce memory usage and prevent acc
 
 | Column         | Purpose |
 |---------------|---------|
-| SUBJECT_ID     | Join to PATIENTS and NOTEEVENTS |
-| HADM_ID        | Admission-level join key for notes |
-| ICUSTAY_ID     | Unique ICU stay identifier |
-| FIRST_CAREUNIT | ICU type filtering |
-| INTIME         | ICU admission timestamp |
-| OUTTIME        | ICU discharge timestamp |
+| `SUBJECT_ID`     | Join to `PATIENTS` and `NOTEEVENTS` |
+| `HADM_ID`        | Admission-level join key for notes |
+| `ICUSTAY_ID`     | Unique ICU stay identifier |
+| `FIRST_CAREUNIT` | ICU type filtering |
+| `INTIME`         | ICU admission timestamp |
+| `OUTTIME`        | ICU discharge timestamp |
 
-ICUSTAY_ID is the cohort anchor.
+`ICUSTAY_ID` is the cohort anchor.
 
-Notes in MIMIC are linked at hospital admission level (HADM_ID), not ICU stay level.  
-Therefore, SUBJECT_ID + HADM_ID are required to correctly link notes to ICU stays.
+Notes in MIMIC are linked at hospital admission level (`HADM_ID`), not ICU stay level.  
+Therefore, `SUBJECT_ID` + `HADM_ID` are required to correctly link notes to ICU stays.
 
 ---
 
@@ -212,12 +210,12 @@ Therefore, SUBJECT_ID + HADM_ID are required to correctly link notes to ICU stay
 
 | Column       | Purpose |
 |-------------|---------|
-| SUBJECT_ID   | Join key |
-| HADM_ID      | Join key |
-| CHARTTIME    | Temporal filtering |
-| CATEGORY     | Restrict to clinical progress notes |
-| ISERROR      | Exclude corrupted notes |
-| TEXT         | Primary NLP content |
+| `SUBJECT_ID`   | Join key |
+| `HADM_ID`      | Join key |
+| `CHARTTIME`    | Temporal filtering |
+| `CATEGORY`     | Restrict to clinical progress notes |
+| `ISERROR`      | Exclude corrupted notes |
+| `TEXT`         | Primary NLP content |
 
 ---
 
@@ -231,23 +229,23 @@ The ICU stay is the anchor. All filtering is defined relative to the ICU stay.
 
 Allowed ICU types:
 
-- MICU  
-- CCU  
-- SICU  
-- TSICU  
-- CSRU  
+- `MICU`  
+- `CCU`  
+- `SICU`  
+- `TSICU`  
+- `CSRU`  
 
-NICU was excluded to restrict to adult critical care.
+`NICU` was excluded to restrict to adult critical care.
 
 ---
 
 ## 3.2 Minimum Length of Stay
 
-LOS_HOURS = (OUTTIME − INTIME) converted to hours.
+`LOS_HOURS` = (`OUTTIME` − `INTIME`) converted to hours.
 
 Constraint:
 
-    LOS_HOURS ≥ 24
+`LOS_HOURS ≥ 24`
 
 Reasoning:
 - Very short stays often contain minimal documentation
@@ -260,11 +258,11 @@ Reasoning:
 
 Age calculated as:
 
-    AGE = INTIME.year − DOB.year
+`AGE = INTIME.year − DOB.year`
 
 Constraint:
 
-    AGE ≥ 18
+`AGE ≥ 18`
 
 Reasoning:
 - Restricts to adult ICU population
@@ -291,13 +289,13 @@ Reasoning:
 
 ## 4.1 Allowed Note Categories
 
-CATEGORY values were normalised (strip + lowercase).
+`CATEGORY` values were normalised (strip + lowercase).
 
 Allowed:
 
-- physician
-- nursing
-- nursing/other
+- `physician`
+- `nursing`
+- `nursing/other`
 
 Reasoning:
 - These contain longitudinal progress documentation
@@ -313,9 +311,9 @@ Rule:
     Keep rows where ISERROR != 1
 
 Important:
-Valid rows may contain ISERROR = 0 or NaN.
 
-Initial filtering using ISERROR == 0 incorrectly removed all notes due to NaN values.
+- Valid rows may contain `ISERROR = 0` or `NaN`.
+- Initial filtering using `ISERROR == 0` incorrectly removed all notes due to `NaN` values.
 
 This was corrected to exclude only explicit errors.
 
@@ -325,11 +323,11 @@ This was corrected to exclude only explicit errors.
 
 Notes were inner joined to valid ICU stays using:
 
-    SUBJECT_ID + HADM_ID
+`SUBJECT_ID` + `HADM_ID`
 
 Join type:
 
-    how="inner"
+`how="inner"`
 
 Reasoning:
 - Ensures notes belong to valid adult ICU stays
@@ -343,14 +341,14 @@ Constraint:
 
     INTIME ≤ CHARTTIME ≤ INTIME + 24 hours
 
-Rows with missing CHARTTIME were removed before comparison.
+Rows with missing `CHARTTIME` were removed before comparison.
 
 Reasoning:
 - Restricts to early ICU documentation
 - Aligns with early deterioration modelling
 - Excludes pre-ICU and late-stay notes
 
-TIME_WINDOW_HOURS = 24
+`TIME_WINDOW_HOURS = 24`
 
 ---
 
@@ -363,7 +361,7 @@ Purpose:
 - Verify cohort shrinkage is monotonic
 - Ensure filtering behaves as expected
 
-This step identified the ISERROR logic issue during development.
+This step identified the `ISERROR` logic issue during development.
 
 All final counts below reflect corrected logic.
 
@@ -410,53 +408,55 @@ Each row represents one ICU clinical note.
 
 Columns:
 
-- SUBJECT_ID  
-- HADM_ID  
-- ICUSTAY_ID  
-- AGE  
-- GENDER  
-- FIRST_CAREUNIT  
-- LOS_HOURS  
-- CATEGORY  
-- CHARTTIME  
-- TEXT  
+- `SUBJECT_ID`
+- `HADM_ID`  
+- `ICUSTAY_ID`  
+- `AGE`  
+- `GENDER`  
+- `FIRST_CAREUNIT`  
+- `LOS_HOURS`  
+- `CATEGORY`  
+- `CHARTTIME`  
+- `TEXT`  
 
 Saved to:
 
-    data/processed/icu_corpus.csv
+`data/processed/icu_corpus.csv`
 
 ---
 
 # 9. Post-Corpus Plan
 
 The corpus is now frozen (162,296 notes across 32,910 ICU stays).  
-Next phase: structured validation and schema design.
+Next phase: structured validation and JSON schema design.
 
-**Step 1 — Manual Exploratory Sample Analysis (~30 Notes)**  
-Stratified ICU-stay–level sampling to:
+**Step 1 — Manual Exploratory Analysis (~30 notes)**  
+Stratified sampling at the ICU-stay level to:
 - Inspect note structure and formatting
-- Identify recurring sections
+- Identify recurring section headers
 - Detect artefacts and de-identification tokens
-- Inform JSON schema and extraction rules
+- Understand structural variability
 
-This is qualitative structure discovery, not modelling.
+This is qualitative structure discovery to inform schema and rule design.
 
 **Step 2 — Quantitative Profiling (~300 notes)**  
 Scripted analysis to measure:
-- Section frequency
+- Section/header frequency
 - Length distributions
 - Formatting patterns
 - Token characteristics
 
-Used to empirically support schema design.
+Used to empirically support and stress-test schema assumptions.
 
 **Step 3 — Rule Validation (30–50 notes)**  
-Deep manual comparison of:
+After implementing feature extraction logic, perform deep manual comparison of:
 - Raw text vs extracted features
 - Section parsing correctness
 - Regex precision and edge cases
 
-Feature logic is refined here, then frozen and applied to the full corpus.
+Rules are refined here, then frozen and applied to the full corpus.
 
 No train/test split is performed at this stage.  
 This phase transitions from corpus construction to NLP feature engineering.
+
+---
