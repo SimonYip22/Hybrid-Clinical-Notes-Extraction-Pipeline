@@ -164,175 +164,299 @@ Any deviation from these constraints requires formal revision of this document.
 
 
 
-# Phase 1 — Minimal Required Columns and Preprocessing Decisions
+# Dataset Decisions — ICU Early Note Corpus (MIMIC-III)
+
+## 1. Purpose
+
+This document specifies the exact cohort definition, filtering logic, and design decisions used to construct the ICU early-note corpus from MIMIC-III.
+
+It serves as the formal reproducibility and audit specification for `build_corpus.py`.
+
+All logic described here reflects the final, validated implementation.
 
 ---
 
-## 1. Required Tables and Columns
+# 2. Data Sources and Required Columns
 
-Inspected all columns and retained the only ones we needed
+Only minimal required columns were loaded to reduce memory usage and prevent accidental feature leakage.
 
-### PATIENTS
-- **SUBJECT_ID** → unique patient identifier (to join with notes and ICU stays)
-- **DOB** → calculate age at ICU admission
-- **GENDER** → optional metadata for JSON
+## 2.1 PATIENTS
 
-### ICUSTAYS
-- **SUBJECT_ID** → join to patient
-- **HADM_ID** → technically only needed to join to NOTEEVENTS, because that table has both SUBJECT_ID and HADM_ID
-- **ICUSTAY_ID** → essential; identifies the ICU stay you want to extract notes for
-- **FIRST_CAREUNIT** → optional metadata for JSON (ICU type, e.g., MICU, SICU)
-- **INTIME / OUTTIME** → calculate ICU length of stay (LOS) in hours
-
-> **Note:** ICUSTAY_ID is crucial. HADM_ID ensures you correctly match notes to the hospital admission associated with the ICU stay. Notes in MIMIC are recorded per hospital admission (HADM_ID), not per ICU stay, so HADM_ID + SUBJECT_ID ensures the correct ICU’s notes are pulled.
-
-### NOTEEVENTS
-- **SUBJECT_ID + HADM_ID** → required to join to ICU stays correctly
-- **CHARTDATE / CHARTTIME / STORETIME** → required to filter notes within first 24–48 hours of ICU admission
-- **CATEGORY** → restrict to physician/nursing notes
-- **DESCRIPTION** → sometimes used to identify “Progress Note” or “Nursing Note,” but optional
-- **ISERROR** → flag for corrupted or erroneous rows (1 = invalid); filter these out
-- **TEXT** → main NLP content
+| Column       | Purpose                          |
+|-------------|----------------------------------|
+| SUBJECT_ID  | Patient-level join key           |
+| DOB         | Age calculation                  |
+| GENDER      | Demographic metadata             |
 
 ---
 
-## 2. Minimal Required Columns Summary
+## 2.2 ICUSTAYS
 
-| Table       | Required Columns                             | Purpose                                             |
-|------------|----------------------------------------------|---------------------------------------------------|
-| PATIENTS   | SUBJECT_ID, DOB                              | Join & calculate age                               |
-| ICUSTAYS   | SUBJECT_ID, ICUSTAY_ID, HADM_ID, FIRST_CAREUNIT, INTIME, OUTTIME | Identify ICU stay, filter ICU type, calculate LOS, define note window |
-| NOTEEVENTS | SUBJECT_ID, HADM_ID, CHARTTIME, CATEGORY, ISERROR, TEXT | Extract ICU notes in first X hours, exclude errors, main text |
+| Column         | Purpose |
+|---------------|---------|
+| SUBJECT_ID     | Join to PATIENTS and NOTEEVENTS |
+| HADM_ID        | Admission-level join key for notes |
+| ICUSTAY_ID     | Unique ICU stay identifier |
+| FIRST_CAREUNIT | ICU type filtering |
+| INTIME         | ICU admission timestamp |
+| OUTTIME        | ICU discharge timestamp |
 
----
+ICUSTAY_ID is the cohort anchor.
 
-## Data Inspection
-
-**NOTEEVENTS**
-- `CATEGORIES` and `DESCRIPTION` columns were examined via frequency analysis.
-- Only clinical progress documentation was retained: `ALLOWED_CATEGORIES = {"physician", "nursing", "nursing/other"}`
-- Radiology, ECG, echo, discharge summaries, and other non-progress documentation were excluded.
-- `DESCRIPTION` was not used for filtering due to high granularity and redundancy once `CATEGORY` was restricted
-
-**ICUSTAYS**
-- `FIRST_CAREUNIT` values were examined via frequency analysis.
-- Neonatal ICU (NICU) was excluded to restrict the cohort to adult ICU stays: `ALLOWED_UNITS = {"MICU", "CCU", "SICU", "TSICU", "CSRU"}`
+Notes in MIMIC are linked at hospital admission level (HADM_ID), not ICU stay level.  
+Therefore, SUBJECT_ID + HADM_ID are required to correctly link notes to ICU stays.
 
 ---
 
-## Filtering / Scope Rules
+## 2.3 NOTEEVENTS
 
-aim: Early ICU progress notes from adult ICU stays lasting ≥ 24 hours.
-
-### Define Valid ICU Stays
-
-filter rows of ICU stays to inly include stays greater than 24hrs and also non NICU
-The ICU stay is the anchor, everything else (notes, patients) is attached to that stay.
-
-- Filter rows based on care unit (remove NICU)
-- Claculate LOS in hours `LOS_HOURS` and add as new column
-- Filter ICU stays ≥ 24 hours
-- Reason: short stays often have limited notes for NLP extraction, we need suffiicent clinical narrative, stabilkises datatset
-
-defined a cohort of ICU patients we can use
-
-### Define Valid Adult ICU Stays 
-
-ICUSTAYS does not contain age, therefore we ust combine PATEINTS which contains DOB with ICUSTAYS
-
-- Merge DOB column from PATIENTS into ICUSTAYS based on matching SUBJECT_ID
-- Calculate AGE at ICU admission and add column into ICUSTAYS → AGE = (ICU admission date − birth date)
-- Filter age ≥ 18 at ICU admission → `AGE >= 18 years`
-- Reason: Removes adolescents and paediatric stays, now cohort contains adult stay, correct ICU types, and LOS ≥ 24 hours
-
-### Filter Notes
-
-Filter rows of notes to exclude errors and keep only progress notes
-
-- Filter rows to only keep notes for phycisians and nurses only
-- Exclude Errors: `ISERROR!=1` → keep anyrow where error isnt 1, as normal notes can be NaN or 0, Ensures clean text
-
-Row counts were logged after each major filtering step to ensure cohort integrity and detect unintended full-row elimination. During development, filtering on ISERROR == 0 removed all notes because valid entries in MIMIC-III often have ISERROR = NaN. The logic was revised to exclude only ISERROR == 1, preserving valid records while removing true error notes.
-
-Time window filtering 
-
-for notes with charttime recorded after the ICU admission but within 24 hours of admission
- 
-INTIME ≤ CHARTTIME ≤ INTIME + 24 hours
-
-reason: Without this filter, you would include:
-	•	Notes written before ICU stay
-	•	Notes written days later
-	•	Notes unrelated to early deterioration (>24hrs)
-
-
-### D. Notes Within First X Hours
-- Include notes where:  
-  `(NOTE CHARTTIME - ICUSTAY INTIME) <= 24 hours`
-- 24 hours → smaller, concise, early signals  
-
-
+| Column       | Purpose |
+|-------------|---------|
+| SUBJECT_ID   | Join key |
+| HADM_ID      | Join key |
+| CHARTTIME    | Temporal filtering |
+| CATEGORY     | Restrict to clinical progress notes |
+| ISERROR      | Exclude corrupted notes |
+| TEXT         | Primary NLP content |
 
 ---
 
-## 4. Joining Logic for Preprocessing
+# 3. Cohort Definition Logic
 
-1. Join `PATIENTS → ICUSTAYS` via `SUBJECT_ID` → get age, sex, ICU LOS
-2. Filter `ICUSTAYS` by age ≥ 18 and LOS ≥ 24–48 hours
-3. Join `ICUSTAYS → NOTEEVENTS` via `SUBJECT_ID + HADM_ID`
-4. Filter `NOTEEVENTS` by:
-   - Notes within first 24–48 hours of ICU admission
-   - CATEGORY / DESCRIPTION (physician/nursing)
-   - ISERROR=0
-
-> **Result:** curated set of early ICU clinical notes with metadata (age, sex, ICU type) ready for NLP extraction
+The ICU stay is the anchor. All filtering is defined relative to the ICU stay.
 
 ---
 
-## 5. Constraint Table
+## 3.1 ICU Unit Restriction
 
-| Constraint       | Recommendation        | Reason                                                         |
-|-----------------|---------------------|---------------------------------------------------------------|
-| Age              | ≥ 18                | Standard adult ICU cohort                                     |
-| ICU LOS          | ≥ 24 hours          | Sufficient content; reduces trivial / short stays            |
-| Notes time window| 24 hours            | Smaller, high-quality corpus; manageable preprocessing       |
-| Note authors     | Physician + Nurse   | Richer clinical signals; can filter to one type if simpler   |
-| Note category    | Progress / Nursing  | Exclude radiology, discharge, lab-only comments              |
-| Exclude errors   | ISERROR=1           | Clean text only                                               |
+Allowed ICU types:
 
----
+- MICU  
+- CCU  
+- SICU  
+- TSICU  
+- CSRU  
 
-## final stats
-
-Initial NOTES: 2083180
-Initial PATIENTS: 46520
-After unit filter: 53432
-After adult age filter: 45278
-After category filter: 1187677
-After error filter: 1186960
-After ICU merge: 888224
-After 24h time window: 162296
-Unique ICU stays: 32910
-Number of reports: 162296
-Number of columns: 10
-
-Retention of early-window notes ≈ 18.3% of ICU-linked notes.
-This is plausible for a 24-hour restriction.
-
-~72.7% of adult ICU stays have at least one qualifying note in first 24h.
-
-162,296 / 32,910 ≈ 4.93 notes per ICU stay 
-
- realistic for:
-	•	Nursing notes
-	•	Physician documentation
-	•	First 24 hours
-
-Error filter behaviour Very small reduction → consistent with MIMIC where ISERROR rarely equals 1.
+NICU was excluded to restrict to adult critical care.
 
 ---
 
-## 6. Expected Outcome
-- ~200–300 notes selected → matches NLP pipeline requirements  
-- Notes are early, focused, manageable for a 4-week project  
-- Metadata allows cohort description and basic filtering without “cheating” — all clinical content still comes from free text
+## 3.2 Minimum Length of Stay
+
+LOS_HOURS = (OUTTIME − INTIME) converted to hours.
+
+Constraint:
+
+    LOS_HOURS ≥ 24
+
+Reasoning:
+- Very short stays often contain minimal documentation
+- Reduces observational or administrative stays
+- Ensures sufficient narrative content for NLP
+
+---
+
+## 3.3 Adult Cohort Definition
+
+Age calculated as:
+
+    AGE = INTIME.year − DOB.year
+
+Constraint:
+
+    AGE ≥ 18
+
+Reasoning:
+- Restricts to adult ICU population
+- Removes paediatric/adolescent admissions
+
+### Handling De-identified Ages
+
+In MIMIC-III, patients older than 89 have shifted DOB values.
+
+Rule:
+
+    If AGE > 120 → set AGE = 90
+
+Reasoning:
+- Identifies implausible ages caused by de-identification
+- Preserves inclusion of elderly patients without removing them
+- Prevents artificial outliers
+
+---
+
+# 4. Note Filtering Logic
+
+---
+
+## 4.1 Allowed Note Categories
+
+CATEGORY values were normalised (strip + lowercase).
+
+Allowed:
+
+- physician
+- nursing
+- nursing/other
+
+Reasoning:
+- These contain longitudinal progress documentation
+- Excludes radiology, ECG, discharge summaries, administrative notes
+- Focused on real-time clinical reasoning
+
+---
+
+## 4.2 Error Filtering
+
+Rule:
+
+    Keep rows where ISERROR != 1
+
+Important:
+Valid rows may contain ISERROR = 0 or NaN.
+
+Initial filtering using ISERROR == 0 incorrectly removed all notes due to NaN values.
+
+This was corrected to exclude only explicit errors.
+
+---
+
+## 4.3 ICU Cohort Enforcement
+
+Notes were inner joined to valid ICU stays using:
+
+    SUBJECT_ID + HADM_ID
+
+Join type:
+
+    how="inner"
+
+Reasoning:
+- Ensures notes belong to valid adult ICU stays
+- Prevents inclusion of hospital notes unrelated to ICU admission
+
+---
+
+## 4.4 Early Time Window Restriction
+
+Constraint:
+
+    INTIME ≤ CHARTTIME ≤ INTIME + 24 hours
+
+Rows with missing CHARTTIME were removed before comparison.
+
+Reasoning:
+- Restricts to early ICU documentation
+- Aligns with early deterioration modelling
+- Excludes pre-ICU and late-stay notes
+
+TIME_WINDOW_HOURS = 24
+
+---
+
+# 5. Logging and Integrity Verification
+
+Row counts were logged after each major filtering step.
+
+Purpose:
+- Detect unintended full-row elimination
+- Verify cohort shrinkage is monotonic
+- Ensure filtering behaves as expected
+
+This step identified the ISERROR logic issue during development.
+
+All final counts below reflect corrected logic.
+
+---
+
+# 6. Final Cohort Statistics
+
+Initial:
+
+- NOTES: 2,083,180  
+- PATIENTS: 46,520  
+- ICUSTAYS: 61,532  
+
+After filtering:
+
+- After unit filter: 53,432  
+- After adult age filter: 45,278  
+- After category filter: 1,187,677  
+- After error filter: 1,186,960  
+- After ICU merge: 888,224  
+- After 24h window: 162,296  
+
+Final corpus:
+
+- Unique ICU stays: 32,910  
+- Total notes: 162,296  
+- Columns: 10  
+
+---
+
+# 7. Derived Cohort Properties
+
+- ~72.7% of adult ICU stays contain ≥1 qualifying early note  
+- ~18.3% of ICU-linked notes fall within first 24 hours  
+- Mean notes per ICU stay ≈ 4.93  
+
+These values are internally consistent and plausible for early ICU documentation.
+
+---
+
+# 8. Final Output Structure
+
+Each row represents one ICU clinical note.
+
+Columns:
+
+- SUBJECT_ID  
+- HADM_ID  
+- ICUSTAY_ID  
+- AGE  
+- GENDER  
+- FIRST_CAREUNIT  
+- LOS_HOURS  
+- CATEGORY  
+- CHARTTIME  
+- TEXT  
+
+Saved to:
+
+    data/processed/icu_corpus.csv
+
+---
+
+# 9. Post-Corpus Plan
+
+The corpus is now frozen (162,296 notes across 32,910 ICU stays).  
+Next phase: structured validation and schema design.
+
+**Step 1 — Manual Exploratory Sample Analysis (~30 Notes)**  
+Stratified ICU-stay–level sampling to:
+- Inspect note structure and formatting
+- Identify recurring sections
+- Detect artefacts and de-identification tokens
+- Inform JSON schema and extraction rules
+
+This is qualitative structure discovery, not modelling.
+
+**Step 2 — Quantitative Profiling (~300 notes)**  
+Scripted analysis to measure:
+- Section frequency
+- Length distributions
+- Formatting patterns
+- Token characteristics
+
+Used to empirically support schema design.
+
+**Step 3 — Rule Validation (30–50 notes)**  
+Deep manual comparison of:
+- Raw text vs extracted features
+- Section parsing correctness
+- Regex precision and edge cases
+
+Feature logic is refined here, then frozen and applied to the full corpus.
+
+No train/test split is performed at this stage.  
+This phase transitions from corpus construction to NLP feature engineering.
