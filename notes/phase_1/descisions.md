@@ -164,7 +164,7 @@ Any deviation from these constraints requires formal revision of this document.
 
 
 
-# Dataset Decisions — ICU Early Note Corpus
+# Dataset Decisions — Adult ICU Early Report Corpus
 
 ## 1. Purpose
 
