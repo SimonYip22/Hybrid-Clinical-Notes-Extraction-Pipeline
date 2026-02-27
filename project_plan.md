@@ -16,6 +16,19 @@ Within a broader portfolio, this project complements:
 
 Together, these projects form a coherent, non-redundant narrative spanning tabular ML, classical clinical NLP, and modern LLM-based generation.
 
+What we are building is realistic engineering for clinical NLP, not maximal model complexity or benchmark performance. The architecture is a hybrid pipeline with clear component roles:
+- Deterministic rule candidate generation
+- Controlled transformer validation
+- Span-aligned structured output
+- Explicit evaluation
+- Full-corpus execution
+
+That is a standard architecture for clinical NLP systems in real-world settings, where precision, auditability, and downstream utility are paramount:
+- Clinical IE systems
+- Safety-critical NLP
+- Regulated environments
+- Low-annotation settings
+
 ---
 
 ## 1. Portfolio Context and Complementarity
