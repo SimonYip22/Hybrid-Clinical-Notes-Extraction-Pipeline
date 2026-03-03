@@ -80,6 +80,8 @@ The emphasis is on engineering judgment under realistic clinical constraints, no
 - Clear documentation:
   - Minimal phase-based notes folder containing detailed notes (summary, decisions, issues)
   - A focused, synthesis-oriented README
+- Minimal API-based deployment of the final extraction pipeline (FastAPI + containerisation + CI/CD)
+  for engineering signal implementation is expected, but production-grade deployment is not the focus.
 
 ---
 
@@ -89,7 +91,7 @@ The emphasis is on engineering judgment under realistic clinical constraints, no
 - FHIR or interoperability standards
 - Integration with the ICU deterioration predictor
 - Large-scale annotation campaigns
-- Production deployment or optimisation
+- - Production-grade infrastructure, scaling optimisation, or cloud architecture beyond minimal API exposure
 
 These exclusions are intentional and justified later
 
@@ -570,6 +572,122 @@ No additional model training at this stage.
 
 ---
 
+### Phase 6 — Minimal API Deployment & CI/CD (Week 6)
+
+**Purpose:**
+- Demonstrate reproducibility, modularity, and basic MLOps competence by exposing the completed hybrid pipeline through a minimal API interface.
+- This phase does not alter the NLP system, it wraps the finalised pipeline in a lightweight deployment layer.
+- The objective is engineering visibility, not productisation.
+
+---
+
+#### 6.1 API Scope (Strictly Minimal)
+
+Single endpoint:
+
+`POST` /extract
+
+Input:
+
+- `note_id`
+
+Process:
+
+-	Load note
+-	Run deterministic rules
+-	Run ClinicalBERT validation
+-	Return structured JSON
+
+Output:
+
+- Deterministic schema defined in Section 5
+
+No batch endpoints.
+No retraining endpoints.
+No admin controls.
+No user management.
+
+---
+
+#### 6.2 Infrastructure Design
+
+- FastAPI application
+-	Docker container
+-	Hosted on Render (or equivalent lightweight PaaS)
+
+No:
+
+- Kubernetes
+-	Autoscaling
+-	Infrastructure-as-code
+-	Model registry
+-	Distributed inference
+
+---
+
+#### 6.3 CI/CD
+
+GitHub Actions:
+
+On push:
+
+- Run unit tests
+- Lint
+- Build container
+
+On merge to main:
+
+- Automatic deployment to Render
+
+Purpose:
+
+- Demonstrate reproducibility
+- Demonstrate containerisation
+- Demonstrate continuous integration discipline
+
+Not:
+
+- Enterprise DevOps simulation
+
+---
+
+#### 6.4 Architectural Rationale
+
+Clinical NLP pipelines are rarely isolated notebooks.
+
+Minimal API exposure demonstrates:
+
+- Component modularity
+-	Pipeline encapsulation
+-	Schema stability
+-	Deterministic behaviour under deployment constraints
+
+The deployment layer validates that:
+
+-	Preprocessing
+-	Rule extraction
+-	Transformer validation
+-	JSON generation
+
+are cleanly separable and production-encapsulable.
+
+---
+
+#### 6.5 Explicit Scope Control
+
+This phase does not include:
+
+- Load testing
+- Latency optimisation
+-	Model retraining automation
+-	Data pipelines
+-	Monitoring systems
+-	Authentication or security hardening
+
+It is a demonstration layer only.
+
+---
+
 ## 8. Documentation
 
 **Purpose:**  
@@ -596,9 +714,12 @@ Project considered complete when:
 - Annotation: 200 sentences only
 - Rules: <120 patterns
 - Fine-tuning: <5 epochs
-- No ontology
-- No deployment
+- No ontology mapping
 - No model benchmarking
+- Single-endpoint API only
+- Dockerised deployment
+- Basic CI/CD only
+- No infrastructure expansion
 
 ---
 
@@ -762,4 +883,8 @@ This project is intentionally:
 - Clinically realistic  
 - Engineering-led rather than benchmark-led  
 
+The inclusion of a minimal deployment layer reinforces engineering maturity without expanding scope into full production infrastructure.
+
 Its strength lies in architectural judgment, scope discipline, and controlled system design rather than artificial scale.
+
+---
