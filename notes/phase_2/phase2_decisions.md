@@ -2,68 +2,21 @@
 
 ## Objective
 
-This document defines the methodological decisions governing execution of Phase 2: Deterministic Rule-Based Extraction, which constructs the structured information extraction backbone of the project.
-
-Phase 2 transforms raw ICU early-note clinical text into structured, span-aligned JSON representations using deterministic rule-based methods. The purpose of this phase is to convert unstructured narrative text into reproducible structured data that can be consumed by later modelling stages.
-
-The extraction system operates using fully deterministic logic, ensuring that identical input text always produces identical output. No probabilistic models, machine learning systems, or transformer architectures are introduced at this stage.
-
-The pipeline performs the following core functions:
-
-- artefact-aware text preprocessing while preserving character offsets
-- section segmentation of clinical notes
-- deterministic extraction of predefined clinical entities
-- negation detection for extracted entities
-- structured JSON output generation
-
-The extraction targets four predefined clinical entity categories:
-
-1. **SYMPTOM** — patient-reported complaints or clinician-observed manifestations  
-2. **INTERVENTION** — therapeutic or procedural actions performed by clinicians  
-3. **COMPLICATION** — adverse events or pathological developments  
-4. **VITAL_MENTION** — explicit physiological measurements or abnormal vital descriptors
-
-These entities are extracted with span alignment, meaning the character offsets of each entity are preserved relative to the original source text. This allows downstream components to trace structured outputs back to their exact locations in the clinical note.
-
-The goal of Phase 2 is therefore to establish a reproducible, auditable, and deterministic extraction backbone upon which all later phases (transformer validation, modelling, and deployment) depend.
-
-No statistical modelling or predictive evaluation occurs during this phase.
+- This document outlines the key decisions made regarding entity schema and extraction rules for Phase 2 of the project, which focuses on deterministic rule-based extraction from ICU progress notes.
+- The decisions here define the scope and approach for Phase 2, ensuring a focused and well scoped extraction process.
 
 ---
 
-## Phase 2 Operational Pipeline
+## Entity Schema Operationalisation
 
-Phase 2 is implemented as a sequential pipeline of deterministic processing stages.  
-Each stage prepares the data required by the next stage.
+### 1. Purpose
 
-| Step | Component | Purpose |
-|-----|-----|-----|
-| 1 | Schema Operationalisation | Define the exact clinical entities to extract and freeze scope to prevent uncontrolled expansion. |
-| 2 | Preprocessing Layer | Normalize artefacts (e.g. headers, formatting, encoding issues) while preserving original character offsets. |
-| 3 | Section Detection | Identify structural sections within clinical notes (e.g. assessment, plan, vitals) and map text spans to section labels. |
-| 4 | Rule-Based Extraction Engine | Apply deterministic pattern rules to identify candidate entities belonging to the predefined schema. |
-| 5 | Negation Detection | Detect negation cues (e.g. "no", "denies", "without") affecting extracted entities and attach negation flags. |
-| 6 | JSON Output Construction | Convert extracted entities into a standardized schema-aligned JSON representation. |
-| 7 | Deterministic Stability Testing | Verify reproducibility and structural correctness of the full pipeline before downstream modelling. |
-
-This ordering is intentional.
-
-Extraction rules depend on clean text and known section boundaries, while negation detection requires identified entities to operate on. JSON output construction occurs only after the extraction and negation steps are complete.
-
-The final step ensures that the entire pipeline is deterministic, stable, and structurally valid before any downstream evaluation or modelling occurs.
-
----
-
-# Entity Schema Decisions
-
-## Objective
-
-- Define the four clinically meaningful entity types to extract from ICU notes, finalising scope for Phase 2 deterministic extraction. 
+- Define the four clinically meaningful entity types to extract from ICU notes, finalising scope for Phase 2 deterministic extraction and preventing uncontrolled expansion. 
 - These entities form the foundation of structured JSON outputs for downstream use.
 
 ---
 
-## 4.1 Entity Types Overview
+### 2. Entity Types 
 
 Extraction in Phase 2 is strictly limited to four entity types:
 
@@ -76,9 +29,7 @@ These four were chosen because they capture the core clinically relevant informa
 
 ---
 
-## 4.2 Entity Details
-
-### 4.2.1 SYMPTOM
+#### 2.1 SYMPTOM
 
 **Purpose:** Capture patient-reported complaints or clinician-observed manifestations.  
 **Rationale:** Symptoms represent the subjective or observable clinical state that informs interventions and complications.
@@ -133,7 +84,7 @@ Ambiguous terms are resolved as follows:
 
 ---
 
-### 4.2.2 INTERVENTION
+#### 2.2 INTERVENTION
 
 **Purpose:** Capture therapeutic or procedural actions performed.  
 **Rationale:** Interventions document treatments and procedures, critical for understanding patient management.
@@ -185,7 +136,7 @@ Ambiguous phrases are resolved as follows:
 
 ---
 
-### 4.2.3 COMPLICATION
+#### 2.3 COMPLICATION
 
 **Purpose:** Capture adverse or pathological developments during ICU stay.  
 **Rationale:** Complications indicate negative outcomes or new pathological events, essential for downstream analysis and evaluation.
@@ -235,7 +186,7 @@ Ambiguous terms are resolved as follows:
 
 ---
 
-### 4.2.4 VITAL_MENTION
+#### 2.4 VITAL_MENTION
 
 **Purpose:** Capture explicit physiological measurements or abnormal descriptors.  
 **Rationale:** Vital signs provide objective, structured information embedded in narrative, useful for linking symptoms, interventions, and complications.
@@ -287,7 +238,7 @@ Ambiguous terms are resolved as follows:
 
 ---
 
-## 4.3 Summary
+#### 2.5 Summary
 
 Phase 2 extraction will only target these four entities to:
 
@@ -296,3 +247,271 @@ Phase 2 extraction will only target these four entities to:
 - Provide structured, span-aligned JSON outputs ready for transformer validation in Phase 3  
 
 This finalises the scope of entity extraction for Phase 2.
+
+---
+
+## Report Preprocessing
+
+### 1. Objective
+
+- The preprocessing layer performs minimal normalization of ICU clinical notes to stabilize the text for deterministic rule-based extraction while preserving traceability to the original source text.
+- This serves as the formal reproducibility and audit specification for `preprocessing.py`.
+- All logic described here reflects the final, validated implementation.
+
+Preprocessing therefore functions solely as a stabilisation step applied to raw clinical text prior to structural segmentation and rule-based entity extraction.
+
+---
+
+### 2. Preprocessing Decisions
+
+Preprocessing decisions are derived directly from the structural analysis conducted in Phase 1. Key findings include:
+
+- Systematic de-identification tokens (`[** ... **]`) are widespread
+- Notes contain inconsistent whitespace and line formatting
+- Core structural signals (e.g., colon-delimited headers and numeric expressions) remain stable
+
+Based on these findings, preprocessing is restricted to correcting artefacts that would interfere with rule matching or section segmentation. The preprocessing stage therefore:
+
+- Removes systematic formatting artefacts identified in Phase 1
+- Preserves the semantic content and structural organization of the note
+- Maintains compatibility with downstream deterministic extraction
+
+---
+
+### 3. Implementation Details
+
+The preprocessing layer performs only the minimal transformations required to stabilize the text for deterministic parsing.
+
+1. **Normalise Newlines**  
+   Standardises line breaks across the corpus (`\r`, `\r\n` → `\n`) to ensure consistent line boundaries for section parsing.
+
+2. **Remove De-identification Tokens**  
+   Strips `[** ... **]` tokens to protect patient privacy. While this occasionally breaks sentences, it is necessary for de-identification and does not impede downstream rule-based extraction.
+
+3. **Normalise Whitespace**  
+   Collapses multiple spaces or tabs into a single space. This stabilises token offsets and prevents misalignment during entity extraction, without altering section or sentence structure.
+
+4. **Remove EMR Trailing References**  
+   Eliminates end-of-document artefacts starting from the `References` header, which typically contain JavaScript popups or EMR metadata irrelevant to clinical content. This step preserves all clinical sections.
+
+---
+
+### 4. Preprocessing Manual Validation
+
+#### 4.1 Overview
+
+- Validation implemented via `validate_preprocessing.py`, which applies the preprocessing function to a random sample of 10 ICU notes, and compares original vs preprocessed outputs.
+- A random sample of 10 ICU clinical notes was manually inspected to evaluate the effectiveness of the Phase 2 preprocessing function. 
+- The validation focused on confirming that de-identification tokens were removed, structural elements were preserved, and that the resulting text remained suitable for deterministic rule-based extraction.
+
+---
+
+#### 4.2 Findings
+
+- **Artefact Removal:**  
+  All `[** ... **]` blocks, including names, dates, hospitals, and identifiers, were successfully removed across all notes.  
+
+- **Structural Preservation:**  
+  - Section headers (e.g., `S:`, `O:`, `Assessment:`, `Plan:`) remained intact.  
+  - Numeric values, vitals, lab results, and medication dosages were unaffected.  
+  - Colon-delimited headers and other section delimiters are preserved for downstream segmentation.
+
+- **Sentence Integrity:**  
+  - Removal of de-identification tokens occasionally produced broken or incomplete sentences.  
+  - This is expected and acceptable, as Phase 2 extraction relies on section and span context rather than perfect sentence syntax.  
+
+- **Additional Observations:**  
+  - Minimal extra whitespace or dangling punctuation remains in some cleaned notes.  
+  - These cosmetic issues do not compromise rule-based extraction.
+
+---
+
+#### 4.3 Conclusion
+
+The preprocessing function achieves its objective: 
+
+- It stabilises the raw clinical text by removing artefacts while maintaining semantic content, numeric density, and section structure. 
+- Sentence breaks and minor cosmetic issues are acceptable within the deterministic extraction pipeline and do not require further preprocessing at this stage.
+
+---
+
+## Section Detection
+
+### 1. Objective
+
+- Section detection identifies structural narrative sections within clinical notes.  
+- Clinical documentation typically follows semi-structured formats where major components of the note are introduced by headers
+- Detecting these sections allows the pipeline to:
+  1. Segment notes into semantically meaningful regions
+  2. Restrict downstream extraction to relevant clinical contexts
+  3. Reduce noise from structured flowsheet artifacts embedded in the notes
+  4. Improve determinism of rule-based extraction by providing section-specific context for entity extraction.
+
+This stage therefore converts a flat clinical note into a structured representation of sections and their contents.
+
+---
+
+### 2. Preprocessing Decision
+
+From the Phase 1 manual inspection of the dataset, several consistent formatting patterns were observed:
+
+- Headers almost always occur at the start of a new line
+- Headers frequently end with a colon
+- Some headers appear as standalone capitalised or non-capitalised phrases
+- Many lines contain leading whitespace or indentation
+
+Based on these observations, the section detection component is designed to identify headers using a combination of:
+
+- Line-based parsing to detect potential headers at the start of lines
+- Pattern matching to identify common header formats (e.g., capitalised words followed by a colon)
+- A predefined list of common headers derived from the dataset
+- A fallback mechanism to label unrecognised sections as `OTHER` to ensure full coverage of the note
+
+---
+
+### 3. Header Pattern Exploration
+
+- The notebook `header_pattern_exploration.ipynb` was used to apply various broad regex patterns to the entire corpus of ICU notes to extract and count repetition of all potential headers.
+- This process identified a comprehensive list of 300 candidate headers sorted by count number, which were then manually reviewed to determine which should be included in the final section detection rules.
+
+#### 3.1 Regex Logic
+
+To identify potential headers across ICU notes, we applied two general regex patterns designed to capture most narrative section headers without being overly specific.
+
+**Colon Terminated Headers**
+
+`colon_pattern = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /()\-'&]{0,80})\s*:\s*")`
+
+- Matches lines that start with optional whitespace.
+- Captures a leading alphanumeric phrase (letters, numbers, spaces, /, (, ), -, ', &).
+- Requires a colon somewhere after the phrase (allowing optional spaces before and after).
+
+**Standalone Headers**
+
+`standalone_pattern = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /()\-\']{1,80})\s*:?\s*$")`
+
+- Matches lines that start and end with optional whitespace.
+- Captures phrases that may or may not have a colon at the end.
+- Ensures the header appears alone on a line ($ anchor), to avoid picking up inline text.
+
+**Implementation Notes**
+
+- Each note is split line-by-line.
+- Lines matching either pattern are counted using a Counter.
+- This approach captures both standard colon-terminated narrative sections and headers that appear on their own line without a colon.
+- The resulting counts are used to prioritise the most frequent header candidates for canonical mapping downstream.
+
+---
+
+### 3.2 Header List Manual Validation
+
+Inspection of the 300 most frequent header candidates revealed that the detected patterns fall into several distinct structural categories. These categories reflect how clinical notes mix narrative documentation, structured monitoring data, and administrative metadata within the same free-text document.
+
+#### Observed Header Categories
+
+**A. Narrative clinical sections**
+
+These represent the core narrative structure of clinical documentation.  
+They introduce sections where clinicians describe patient history, examination findings, and clinical reasoning.
+
+Examples observed in the corpus:
+
+- `Plan:`
+- `Assessment:`
+- `Chief Complaint:`
+- `HPI:`
+
+---
+
+**B. Examination or system-based subsections**
+
+These represent organ-system subsections, commonly appearing within a physical examination or assessment section.
+
+Examples observed in the corpus:
+
+- `Neurologic:`
+- `Cardiovascular:`
+- `Respiratory / Chest:`
+- `Abdominal:`
+
+---
+
+**C. ICU monitoring and physiological fields**
+
+A large proportion of detected headers correspond to monitoring variables or device parameters.  
+These fields appear frequently because ICU documentation often embeds flowsheet-style monitoring data directly inside clinical notes.
+
+Examples observed in the corpus:
+
+- `HR:`
+- `BP:`
+- `SpO2:`
+- `FiO2:`
+
+These are structured measurements rather than narrative sections and therefore should not be interpreted as document section boundaries.
+
+---
+
+**D. Laboratory or diagnostic variables**
+
+Another large group of matches corresponds to laboratory values or diagnostic measurements that appear as structured fields.
+
+Examples observed in the corpus:
+
+- `WBC`
+- `Glucose`
+- `Creatinine`
+- `Hct`
+
+These represent individual test values rather than narrative text blocks.
+
+---
+
+**E. Administrative or documentation metadata**
+
+Some detected headers correspond to administrative or documentation-tracking fields that appear in admission templates or electronic health record exports.
+
+Examples observed in the corpus:
+
+- `Attending MD:`
+- `Admit diagnosis:`
+- `Transferred from:`
+- `Transferred to:`
+
+These fields describe metadata about the encounter rather than clinical narrative content.
+
+--- 
+
+#### Empirical Insight
+
+The ranked frequency list provided an empirical view of the header distribution across the entire dataset. Several important observations emerged:
+
+1. True narrative sections appear very frequently, tens of thousands of times across the corpus.
+2. Non-structural fields also appear frequently but represent monitoring data rather than document sections (e.g., vital signs, ventilator settings, laboratory measurements, and device parameters).
+3. The header vocabulary stabilises quickly, with the most common narrative sections appearing within the top few hundred candidates, and beyond this range, additional matches consisted almost entirely of flowsheet variables, laboratory names, abbreviations, or other non-structural artifacts.
+
+Therefore we can be confident that mapping canonical headers from thos manual output is sufficient.
+
+---
+
+#### Implication for Section Detection
+
+The frequency analysis confirmed that section detection must not rely solely on regex matching, because regex patterns capture both:
+
+- True document sections
+- Structured monitoring data
+
+Therefore the final section detection stage will:
+
+1. Detect candidate headers using generalized regex patterns
+2. Normalise header text
+3. Map headers to a curated canonical section set
+
+These appear frequently because many clinical documentation systems embed structured physiological data and laboratory values directly within free-text notes. Although these fields visually resemble headers (e.g., appearing at the beginning of a line with a colon), they do not represent narrative document structure.
+
+---
+
+### 3.3 Final Headers
+
+
+
