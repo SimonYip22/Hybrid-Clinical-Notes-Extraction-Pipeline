@@ -409,6 +409,8 @@ Inspection of the 300 most frequent header candidates revealed that the detected
 
 #### Observed Header Categories
 
+Only narrative clinical headers (e.g., SOAP-style sections) are relevant for downstream section detection. Subsections, physiological monitoring fields, laboratory variables, and administrative metadata are captured by the regex but will be ignored in the canonical mapping.
+
 **A. Narrative clinical sections**
 
 These represent the core narrative structure of clinical documentation.  
@@ -416,10 +418,10 @@ They introduce sections where clinicians describe patient history, examination f
 
 Examples observed in the corpus:
 
-- `Plan:`
-- `Assessment:`
-- `Chief Complaint:`
-- `HPI:`
+- `Plan`
+- `Assessment`
+- `Chief Complaint`
+- `HPI`
 
 ---
 
@@ -429,10 +431,10 @@ These represent organ-system subsections, commonly appearing within a physical e
 
 Examples observed in the corpus:
 
-- `Neurologic:`
-- `Cardiovascular:`
-- `Respiratory / Chest:`
-- `Abdominal:`
+- `Neurologic`
+- `Cardiovascular`
+- `Respiratory / Chest`
+- `Abdominal`
 
 ---
 
@@ -443,10 +445,10 @@ These fields appear frequently because ICU documentation often embeds flowsheet-
 
 Examples observed in the corpus:
 
-- `HR:`
-- `BP:`
-- `SpO2:`
-- `FiO2:`
+- `HR`
+- `BP`
+- `SpO2`
+- `FiO2`
 
 These are structured measurements rather than narrative sections and therefore should not be interpreted as document section boundaries.
 
@@ -473,45 +475,67 @@ Some detected headers correspond to administrative or documentation-tracking fie
 
 Examples observed in the corpus:
 
-- `Attending MD:`
-- `Admit diagnosis:`
-- `Transferred from:`
-- `Transferred to:`
+- `Attending MD`
+- `Admit diagnosis`
+- `Transferred from`
+- `Transferred to`
 
 These fields describe metadata about the encounter rather than clinical narrative content.
 
---- 
+---
 
 #### Empirical Insight
 
-The ranked frequency list provided an empirical view of the header distribution across the entire dataset. Several important observations emerged:
+The ranked frequency list of the 300 most common header candidates provided an empirical view of the header distribution across the dataset. Manual inspection revealed that the detected headers fall into several structural categories, but only a subset corresponds to true narrative clinical sections, which are relevant for section detection. Key observations include:
 
-1. True narrative sections appear very frequently, tens of thousands of times across the corpus.
-2. Non-structural fields also appear frequently but represent monitoring data rather than document sections (e.g., vital signs, ventilator settings, laboratory measurements, and device parameters).
-3. The header vocabulary stabilises quickly, with the most common narrative sections appearing within the top few hundred candidates, and beyond this range, additional matches consisted almost entirely of flowsheet variables, laboratory names, abbreviations, or other non-structural artifacts.
+1. True narrative clinical sections, such as SOAP-style headers, appear very frequently, often tens of thousands of times across the corpus. Examples include:
+2. Many detected headers correspond to structured data rather than document structure, including:
+   - ICU monitoring fields (e.g., `HR`, `BP`, `SpO2`, `FiO2`)
+   - Laboratory or diagnostic variables (e.g., `WBC`, `Glucose`, `Creatinine`, `Hct`)
+   - Administrative or documentation metadata (e.g., `Attending MD`, `Admit diagnosis`, `Transferred from`)
+3. The header vocabulary stabilises quickly: the most common narrative sections appear within the top few hundred candidates. Beyond this range, additional matches consist almost entirely of flowsheet variables, lab fields, abbreviations, or other non-structural artifacts.
 
-Therefore we can be confident that mapping canonical headers from thos manual output is sufficient.
+Thus, we can be confident that mapping canonical headers using only the frequent, manually validated narrative headers is sufficient for robust section detection.
 
 ---
 
 #### Implication for Section Detection
 
-The frequency analysis confirmed that section detection must not rely solely on regex matching, because regex patterns capture both:
+The frequency analysis confirms that regex-based detection alone is insufficient, because regex patterns capture both narrative headers and structured non-narrative fields. To ensure accurate section boundaries:
 
-- True document sections
-- Structured monitoring data
+1. Candidate headers are detected using generalised regex patterns.
+2. Only narrative clinical headers are retained for downstream mapping.
+3. Headers are normalised and mapped to a curated canonical section set.
 
-Therefore the final section detection stage will:
+Structured monitoring fields, lab values, and administrative metadata are ignored, even if they match regex patterns, to prevent misidentification of section boundaries.
 
-1. Detect candidate headers using generalized regex patterns
-2. Normalise header text
-3. Map headers to a curated canonical section set
-
-These appear frequently because many clinical documentation systems embed structured physiological data and laboratory values directly within free-text notes. Although these fields visually resemble headers (e.g., appearing at the beginning of a line with a colon), they do not represent narrative document structure.
+This approach ensures that section detection captures meaningful narrative blocks while excluding non-narrative or structured artifacts embedded within clinical notes.
 
 ---
 
 ### 3.3 Final Headers
+
+The following 13 headers were retained as top-level narrative section headers within the clinical notes:
+
+- `Plan`
+- `Assessment`
+- `Action`
+- `Response`
+- `Assessment and Plan`
+- `Chief Complaint`
+- `HPI`
+- `Past medical history`
+- `Family history`
+- `Social History`
+- `Review of systems`
+- `Physical Examination`
+- `Disposition`
+
+These represent narrative clinical sections in which clinicians write extended free-text descriptions, reasoning, or summaries. Such sections typically contain the main clinical narrative (e.g., history, examination findings, clinical reasoning, and management plans).
+
+Because these sections introduce substantial blocks of free-text content, they provide reliable boundaries for segmenting clinical documents into meaningful narrative units for downstream processing.
+
+---
 
 
 
