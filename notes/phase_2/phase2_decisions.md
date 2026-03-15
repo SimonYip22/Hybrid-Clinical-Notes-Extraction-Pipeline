@@ -403,7 +403,7 @@ To identify potential headers across ICU notes, we applied two general regex pat
 
 ---
 
-### 3.2 Header List Manual Validation
+#### 3.2 Header List Manual Validation
 
 Inspection of the 300 most frequent header candidates revealed that the detected patterns fall into several distinct structural categories. These categories reflect how clinical notes mix narrative documentation, structured monitoring data, and administrative metadata within the same free-text document.
 
@@ -513,7 +513,7 @@ This approach ensures that section detection captures meaningful narrative block
 
 ---
 
-### 3.3 Final Headers
+#### 3.3 Final Headers
 
 The following 13 headers were retained as top-level narrative section headers within the clinical notes:
 
@@ -537,5 +537,30 @@ Because these sections introduce substantial blocks of free-text content, they p
 
 ---
 
+### 4. Section Detection Decisions
+
+All code and logic is from section_detection.py
+
+#### 4.1 Broad Header Detection with Narrow Canonical Storage
+
+Due to earlier header pattern exploration, clinical notes contain a wide range of header-like structures. To ensure reliable structural parsing, the detection strategy intentionally follows a broad detection, narrow storage principle:
+
+1. Regex patterns are designed to detect a wide range of potential headers by using the same regex logic used in header_pattern_exploration.ipynb.
+2. Only the curated set of 13 canonical narrative headers is retained for downstream extraction.
+
+This approach ensures that the algorithm can correctly identify section boundaries while preventing non-narrative fields from being incorrectly interpreted as meaningful narrative sections.
+
+---
+
+### 5. Implementation Workflow
 
 
+---
+
+### 6. Section Detection Manual Validation
+
+#### 6.1 Overview
+
+- Validation implemented via `validate_section_detection.py`, which applies the section extraction function to a random sample of 10 ICU notes, and compares original vs outputs.
+- A random sample of 10 ICU clinical notes was manually inspected to evaluate the effectiveness of the Phase 2 section extraction function. 
+- The validation focused on confirming that the detected sections correspond to meaningful narrative blocks, that section boundaries are correctly identified, and that non-narrative fields are appropriately ignored.
