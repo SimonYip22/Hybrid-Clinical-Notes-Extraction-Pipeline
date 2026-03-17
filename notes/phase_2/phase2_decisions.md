@@ -669,3 +669,5 @@ This structured representation converts an unstructured clinical note into clear
 - Validation implemented via `validate_section_detection.py`, which applies the section extraction function to a random sample of 10 ICU notes, and compares original vs outputs.
 - A random sample of 10 ICU clinical notes was manually inspected to evaluate the effectiveness of the Phase 2 section extraction function. 
 - The validation focused on confirming that the detected sections correspond to meaningful narrative blocks, that section boundaries are correctly identified, and that non-narrative fields are appropriately ignored.
+
+---
