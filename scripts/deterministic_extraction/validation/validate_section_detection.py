@@ -51,7 +51,7 @@ for i, note in enumerate(sample):
     print(note)
 
     print("\n" + "-" * 80)
-    print(f"NOTE {i+1} — CLEANED")
+    print(f"NOTE {i+1} — EXTRACTED SECTIONS")
     print("-" * 80)
     print(extracted)
 
