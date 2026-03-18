@@ -351,7 +351,7 @@ This stage therefore converts a flat clinical note into a structured representat
 
 ---
 
-### 2. Preprocessing Decision
+### 2. Section Detection Decision
 
 From the Phase 1 manual inspection of the dataset, several consistent formatting patterns were observed:
 
@@ -365,7 +365,6 @@ Based on these observations, the section detection component is designed to iden
 - Line-based parsing to detect potential headers at the start of lines
 - Pattern matching to identify common header formats (e.g., capitalised words followed by a colon)
 - A predefined list of common headers derived from the dataset
-- A fallback mechanism to label unrecognised sections as `OTHER` to ensure full coverage of the note
 
 ---
 
@@ -612,7 +611,106 @@ Example: `Chief Complaint: Chest pain for two days`
 
 ---
 
-### 5. Section Extraction Workflow
+### 5. Method Refinement
+
+#### 5.1 Initial Design and Rationale
+
+The initial section detection strategy aimed to maximise structural accuracy by leveraging broad header detection. Using generalised regex patterns, all header-like lines (both canonical and non-canonical) were identified. The design followed a broad detection, narrow storage principle:
+
+- All detected headers acted as structural boundaries
+- Only canonical headers were stored as section keys
+- Non-canonical headers terminated sections but did not create new ones
+
+This approach was motivated by the assumption that:
+
+- Clinical notes contain diverse header formats
+- Treating all headers as boundaries would prevent unrelated structured content (e.g., monitoring data, labs) from being included within narrative sections
+
+---
+
+#### 5.2 Observed Failure: Over-Segmentation
+
+Manual validation revealed that this approach systematically failed due to over-segmentation.
+
+Specifically:
+- Non-canonical headers such as `HEENT`, `Cardiovascular`, and `Respiratory` were incorrectly treated as section boundaries
+- These headers frequently occur within true narrative sections (e.g., `Physical Examination`, `Assessment and Plan`)
+
+This resulted in:
+- Premature termination of valid sections
+- Empty or severely truncated outputs (e.g., missing `Physical Examination`)
+- Fragmentation of continuous clinical narratives
+- Loss of clinically relevant information
+
+---
+
+#### 5.3 Root Cause
+
+The failure arises from a fundamental structural property of ICU notes, clinical notes contain multiple hierarchical levels that are not distinguishable using simple regex patterns:
+
+1. **Top-level narrative sections**  
+   e.g., `HPI`, `Physical Examination`, `Assessment and Plan`
+
+2. **Nested subsections**  
+   e.g., `Neurologic`, `Cardiovascular`, `Respiratory`
+
+3. **Structured flowsheet and measurement data**  
+   e.g., `HR`, `BP`, `SpO2`, laboratory values
+
+These elements often share identical surface patterns (e.g., colon-terminated phrases), making it impossible to reliably differentiate them using rule-based pattern matching alone.
+
+As a result, the assumption that any detected header represents a structural boundary is invalid in real-world clinical text.
+
+---
+
+#### 5.4 Final Design Decision
+
+To address this, the section detection strategy was simplified to a canonical-only boundary approach:
+
+- Only headers in the predefined canonical set are detected
+- Only canonical headers define section boundaries
+- All non-canonical header-like lines are treated as normal text
+- Section content is defined as all text between consecutive canonical headers
+
+---
+
+#### 5.5 Justification of Final Approach
+
+This refinement directly resolves the observed failure mode:
+
+- Prevents subsection headers from prematurely terminating sections
+- Preserves complete narrative blocks (e.g., full `Physical Examination`)
+- Eliminates dependence on unreliable header-like pattern distinctions
+
+This approach intentionally prioritises:
+
+- **High recall**: ensuring clinically relevant content is not lost
+- **Structural robustness**: avoiding fragmentation in noisy, real-world data
+
+At the same time, it accepts a known trade-off:
+
+- **Moderate precision**: some non-relevant content (e.g., flowsheet data) may be included within sections
+
+This trade-off is appropriate because:
+- Perfect structural parsing of clinical notes is not achievable with deterministic rules
+- Downstream processing can tolerate or filter excess content
+- The primary objective is accurate recovery of core narrative sections, not perfect boundary precision
+
+---
+
+#### 5.6 Final Position
+
+The refined method reflects a realistic and methodologically sound approach to section detection in clinical text:
+
+- It aligns with the inherent limitations of rule-based systems
+- It is robust to the structural variability of ICU notes
+- It achieves the project goal of reasonably accurate section extraction, rather than unattainable perfect parsing
+
+This establishes a reliable foundation for downstream analysis and modelling.
+
+---
+
+### 6. Section Extraction Workflow
 
 The section extraction algorithm implemented in `section_detection.py` processes each clinical note sequentially using a deterministic line-based parsing strategy with two functions `detect_header()` and `extract_sections()`. The workflow is as follows:
 
@@ -662,9 +760,9 @@ This structured representation converts an unstructured clinical note into clear
 
 ---
 
-### 6. Section Detection Manual Validation
+### 7. Section Detection Manual Validation
 
-#### 6.1 Overview
+#### 7.1 Overview
 
 - Validation implemented via `validate_section_detection.py`, which applies the section extraction function to a random sample of 10 ICU notes, and compares original vs outputs.
 - A random sample of 10 ICU clinical notes was manually inspected to evaluate the effectiveness of the Phase 2 section extraction function. 
