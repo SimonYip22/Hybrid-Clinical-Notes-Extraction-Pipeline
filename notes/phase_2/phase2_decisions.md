@@ -16,7 +16,64 @@
 
 ---
 
-### 2. Entity Types 
+### 2. JSON Schema Definition
+
+The extraction pipeline outputs one JSON object per entity. This design preserves auditability, traceability, and downstream compatibility.
+
+Each extracted entity will follow this deterministic schema:
+
+```json
+{
+  "note_id": "string",                // Unique identifier for the ICU note
+  "subject_id": "string",             // Patient identifier
+  "hadm_id": "string",                // Hospital admission ID
+  "icustay_id": "string",             // ICU stay identifier
+  "entity_text": "string",            // Exact text of the extracted entity (e.g., "chest pain")
+  "entity_type": "SYMPTOM | INTERVENTION | COMPLICATION | VITAL_MENTION",
+  "char_start": 0,                    // Start character offset of entity in the note
+  "char_end": 0,                      // End character offset of entity in the note
+  "sentence_text": "string",          // Full sentence containing the entity, used for context and transformer validation
+  "section": "string",         // Section of the note where the entity appears (e.g., "HPI", "Assessment")
+  "negated": true,                    // True if the entity is negated in context (e.g., "denies chest pain")
+  "validation_confidence": null        // Probability score from ClinicalBERT validation
+}
+```
+
+#### 2.1 Considerations and Decisions
+
+1. Multiple entities per report: 
+
+- A single ICU note may generate multiple JSON objects corresponding to each entity detected across all four entity types.
+- `note_id`, `subject_id`, and other identifiers ensure entities can be grouped back to the originating note or patient.
+
+2. Entity vs sentence context:
+
+- `entity_text` is the precise extracted term.
+- `sentence_text` provides surrounding context to support transformer-based validation and auditability.
+
+3. Section awareness:
+
+- Extraction is section-specific: each entity is mapped to its section (HPI, Chief Complaint, etc.).
+- Sections allow filtering, prioritisation, and downstream analyses that depend on note structure.
+
+4. Negation handling:
+
+- Each entity includes a deterministic negated flag based on local negation cues (e.g., "no", "denies", "without").
+
+5. Provenance and downstream use:
+
+- Character offsets (`char_start`, `char_end`) preserve exact positioning in the raw note, supporting auditing or text alignment.
+- This JSON is fully compatible with downstream ML or rule-based modules and can be aggregated per note or patient.
+
+6. Transformer Validation:
+
+- `validation_confidence` is updated in Phase 3, this field stores the ClinicalBERT probability score used to validate or filter entities.
+- `negated` is determined in Phase 2 using deterministic rules, but can be overridden or refined in Phase 3 based on contextual understanding.
+- The schema allows the final JSON to include both deterministic extractions and contextual validation results.
+
+---
+
+### 3. Entity Types 
 
 Extraction in Phase 2 is strictly limited to four entity types which seperate clinical reasoning components and provide a clear, clinically relevant structure for downstream analysis:
 
@@ -29,7 +86,7 @@ These four were chosen because they capture the core clinically relevant informa
 
 ---
 
-#### 2.1 SYMPTOM
+#### 3.1 SYMPTOM
 
 **Purpose:** Capture patient-reported complaints or clinician-observed manifestations.  
 **Rationale:** Symptoms represent the subjective or observable clinical state that informs interventions and complications.
@@ -84,7 +141,7 @@ Ambiguous terms are resolved as follows:
 
 ---
 
-#### 2.2 INTERVENTION
+#### 3.2 INTERVENTION
 
 **Purpose:** Capture therapeutic or procedural actions performed.  
 **Rationale:** Interventions document treatments and procedures, critical for understanding patient management.
@@ -136,7 +193,7 @@ Ambiguous phrases are resolved as follows:
 
 ---
 
-#### 2.3 COMPLICATION
+#### 3.3 COMPLICATION
 
 **Purpose:** Capture adverse or pathological developments during ICU stay.  
 **Rationale:** Complications indicate negative outcomes or new pathological events, essential for downstream analysis and evaluation.
@@ -186,7 +243,7 @@ Ambiguous terms are resolved as follows:
 
 ---
 
-#### 2.4 VITAL_MENTION
+#### 3.4 VITAL_MENTION
 
 **Purpose:** Capture explicit physiological measurements or abnormal descriptors.  
 **Rationale:** Vital signs provide objective, structured information embedded in narrative, useful for linking symptoms, interventions, and complications.
@@ -238,7 +295,7 @@ Ambiguous terms are resolved as follows:
 
 ---
 
-#### 2.5 Summary
+### 4. Summary
 
 Phase 2 extraction will only target these four entities to:
 
@@ -335,11 +392,11 @@ The preprocessing function achieves its objective:
 
 ---
 
-## Section Detection
+## Section Detection and Extraction
 
 ### 1. Objective
 
-- Section detection identifies structural narrative sections within clinical notes.  
+- Section extraction identifies structural narrative sections within clinical notes.  
 - Clinical documentation typically follows semi-structured formats where major components of the note are introduced by headers
 - Detecting these sections allows the pipeline to:
   1. Segment notes into semantically meaningful regions
@@ -351,7 +408,7 @@ This stage therefore converts a flat clinical note into a structured representat
 
 ---
 
-### 2. Section Detection Decision
+### 2. Section Extraction Decision
 
 From the Phase 1 manual inspection of the dataset, several consistent formatting patterns were observed:
 
@@ -360,7 +417,7 @@ From the Phase 1 manual inspection of the dataset, several consistent formatting
 - Some headers appear as standalone capitalised or non-capitalised phrases
 - Many lines contain leading whitespace or indentation
 
-Based on these observations, the section detection component is designed to identify headers using a combination of:
+Based on these observations, the section extraction component is designed to identify headers using a combination of:
 
 - Line-based parsing to detect potential headers at the start of lines
 - Pattern matching to identify common header formats (e.g., capitalised words followed by a colon)
@@ -371,7 +428,7 @@ Based on these observations, the section detection component is designed to iden
 ### 3. Header Pattern Exploration
 
 - The notebook `header_pattern_exploration.ipynb` was used to apply various broad regex patterns to the entire corpus of ICU notes to extract and count repetition of all potential headers.
-- This process identified a comprehensive list of 300 candidate headers sorted by count number, which were then manually reviewed to determine which should be included in the final section detection rules.
+- This process identified a comprehensive list of 300 candidate headers sorted by count number, which were then manually reviewed to determine which should be included in the final section extraction rules.
 
 #### 3.1 Regex Logic
 
@@ -408,7 +465,7 @@ Inspection of the 300 most frequent header candidates revealed that the detected
 
 **Observed Header Categories**
 
-Only narrative clinical headers (e.g., SOAP-style sections) are relevant for downstream section detection. Subsections, physiological monitoring fields, laboratory variables, and administrative metadata are captured by the regex but will be ignored in the canonical mapping.
+Only narrative clinical headers (e.g., SOAP-style sections) are relevant for downstream section extraction. Subsections, physiological monitoring fields, laboratory variables, and administrative metadata are captured by the regex but will be ignored in the canonical mapping.
 
 **A. Narrative clinical sections**
 
@@ -485,7 +542,7 @@ These fields describe metadata about the encounter rather than clinical narrativ
 
 **Empirical Insight**
 
-The ranked frequency list of the 300 most common header candidates provided an empirical view of the header distribution across the dataset. Manual inspection revealed that the detected headers fall into several structural categories, but only a subset corresponds to true narrative clinical sections, which are relevant for section detection. Key observations include:
+The ranked frequency list of the 300 most common header candidates provided an empirical view of the header distribution across the dataset. Manual inspection revealed that the detected headers fall into several structural categories, but only a subset corresponds to true narrative clinical sections, which are relevant for section extraction. Key observations include:
 
 1. True narrative clinical sections, such as SOAP-style headers, appear very frequently, often tens of thousands of times across the corpus. Examples include:
 2. Many detected headers correspond to structured data rather than document structure, including:
@@ -508,7 +565,7 @@ The frequency analysis confirms that regex-based detection alone is insufficient
 
 Structured monitoring fields, lab values, and administrative metadata are ignored, even if they match regex patterns, to prevent misidentification of section boundaries.
 
-This approach ensures that section detection captures meaningful narrative blocks while excluding non-narrative or structured artifacts embedded within clinical notes.
+This approach ensures that section extraction captures meaningful narrative blocks while excluding non-narrative or structured artifacts embedded within clinical notes.
 
 ---
 
@@ -723,7 +780,7 @@ This establishes a reliable foundation for downstream analysis and modelling.
 
 ### 6. Section Extraction Workflow
 
-The section extraction algorithm implemented in `section_detection.py` processes each clinical note sequentially using a deterministic line-based parsing strategy with two functions: `match_canonical_header()` and `extract_sections()`.
+The section extraction algorithm implemented in `section_extraction.py` processes each clinical note sequentially using a deterministic line-based parsing strategy with two functions: `match_canonical_header()` and `extract_sections()`.
 
 The workflow is as follows:
 
@@ -788,11 +845,11 @@ This workflow reflects a strictly deterministic, canonical-boundary approach tha
 
 ---
 
-### 7. Section Detection Manual Validation
+### 7. Section Extraction Manual Validation
 
 #### 7.1 Overview
 
-Validation was performed using `validate_section_detection.py`, which applies the section extraction function to a reproducible random sample of ICU clinical notes.
+Validation was performed using `validate_section_extraction.py`, which applies the section extraction function to a reproducible random sample of ICU clinical notes.
 
 The validation combines:
 - Qualitative inspection (manual review of extracted sections)
@@ -825,6 +882,100 @@ A sample of 30 ICU notes was evaluated.
 
 ---
 
+## Sentence Segmentation
+
+### 1. Objective
+
+Segment section-level clinical text into sentence-level units to enable:
+  
+- Precise entity span alignment for deterministic extraction
+- Sentence-level context for downstream validation (Phase 3)
+
+Bridges structural parsing (sections) and semantic extraction (entities) and preserves character offsets relative to original section text.
+
+---
+
+### 2. Sentence Segmentation Decisions
+
+#### 2.1 Design Decisions
+
+- **Post-section segmentation:** Applied after section extraction to preserve structural context
+- **Deterministic & reproducible:** Sentence spans and offsets do not change across runs
+- **Section-level granularity:** Enables targeted entity extraction per section
+
+#### 2.2 Rationale for NLTK
+
+Regex-based splitting (on periods or newlines) is unreliable in ICU notes due to:
+
+- Abbreviations (Pt., Dr., numeric units)
+- Dense numeric and procedural data
+- Inconsistent punctuation or missing spaces
+
+SpaCy offers high-accuracy segmentation but:
+
+-	Requires heavier dependency and memory overhead
+- Designed for general text and may not perform well on noisy clinical notes without custom training
+- NLTK’s Punkt tokenizer provides a deterministic, rule-based approach that is sufficient for rule-based deterministic extraction
+-	NLTK spans integrate seamlessly with current offset-based pipeline
+
+---
+
+### 3. Workflow & Implementation
+
+1. **Section Extraction:**  
+  Apply `extract_sections()` to obtain section-level text. Each section is a key-value pair (`header` → `text`).
+
+2. **Sentence Tokenization:**  
+  Use NLTK’s `sent_tokenize()` (Punkt tokenizer) to split each section independently into sentences.
+
+3. **Offset Mapping:**  
+  - Initialize a `cursor = 0` pointer at the start of the section.  
+  - Loop through tokenized sentences:
+    - Locate sentence in original section starting from `cursor` (`start = text.find(sent, cursor)`)
+    - Compute `end = start + len(sent)`
+    - Append `{ "sentence": sent, "start": start, "end": end }` to output
+    - Move `cursor = end` to prevent duplicate matches
+
+4. **Output:**  
+  List of dictionaries for each sentence:
+   ```json
+   {
+     "sentence": "string",
+     "start": 0,
+     "end": 0
+   }
+
+5. **Notes on implementation:**
+  - Works per section to maintain context
+  - Does not modify original text
+  - Supports deterministic span alignment for regex-based entity extraction
+  - Offsets are relative to section text, not the full note
+
+---
+
+### 4. Validation 
+
+Validation was implemented via `validate_sentence_segmentation.py`, which applies the section extraction and sentence segmentation function to a random sample of 10 ICU notes and manually verifies the correctness of sentence splitting and offset alignment.
+
+- Print sections and sentence spans with start:end -> sentence
+- Verify correct sentence splitting
+- Check alignment of offsets with original text
+- Ensure robustness to long sentences and dense numeric/clinical data
+
+Observed characteristics:
+
+- Long sentences (1000+ characters) occur in structured sections (e.g., [PHYSICAL EXAMINATION])
+- NLTK handles typical clinical sentence boundaries accurately
+- Optional post-processing can split excessively long sentences if needed
+
+Conclusion:
+
+- NLTK-based sentence segmentation is deterministic, accurate, and lightweight
+- Preserves both text content and offset integrity
+- Provides sentence-level context needed for downstream entity extraction and validation
+
+---
+
 ## Rule Based Extraction
 
 ### 1. Objective
@@ -854,7 +1005,7 @@ Rule-based extraction is grounded in the Phase 2 schema operationalisation, whic
 
 Each entity is governed by explicit inclusion/exclusion criteria, negation cues, and prototypical trigger patterns. The extraction engine applies deterministic pattern matching to identify candidate entities within sectioned note text, strictly adhering to these predefined definitions.
 
-Rule development was guided by targeted inspection of a small sample of ICU notes from section detection validation (`validate_section_detection.py`). High-frequency, clinically meaningful patterns were identified and iteratively translated into deterministic rules, prioritising precision and reproducibility over exhaustive coverage.
+Rule development was guided by targeted inspection of a small sample of ICU notes from section extraction validation (`validate_section_extraction.py`). High-frequency, clinically meaningful patterns were identified and iteratively translated into deterministic rules, prioritising precision and reproducibility over exhaustive coverage.
 
 This constrained approach prevents scope creep, ensures span-aligned and clinically coherent outputs, and provides a stable foundation for downstream transformer validation in Phase 3.
 
@@ -898,6 +1049,7 @@ You are not building:
 
 You are building:
 	•	a demonstration of pipeline design + engineering judgment
+  a minimal, concept-level clinical IE system that produces stable, reproducible outputs for downstream validation.
 
 What matters is NOT coverage
 
@@ -914,3 +1066,22 @@ You want:
 NOT:
 
 “complete medical coverage”
+
+key concept is at the core all rule-based clinical NLP reduces to controlled lexical matching, tehcnically at a crude basic level its keywrod extraction, however :
+
+	•	constraint layering
+	•	pipeline integration
+	•	output structure
+	•	evaluation
+
+is what makes rule based extraction a non-trivial engineering task that requires careful design and judgment. this is constrained, concept-level candidate generation in a clinical IE pipeline, not a full medical NER system or ontology development.
+
+You are NOT:
+	•	oversimplifying incorrectly
+	•	misunderstanding rule-based NLP
+	•	missing some “hidden complexity”
+
+You ARE:
+	•	implementing the core mechanism correctly
+	•	at a controlled scale
+	•	with proper engineering structure
