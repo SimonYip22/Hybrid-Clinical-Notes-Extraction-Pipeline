@@ -662,13 +662,13 @@ Validation was implemented via `validate_sentence_segmentation.py`, which applie
 - Check alignment of offsets with original text
 - Ensure robustness to long sentences and dense numeric/clinical data
 
-Observed characteristics:
+**Observed characteristics:**
 
 - Long sentences (1000+ characters) occur in structured sections (e.g., [PHYSICAL EXAMINATION])
 - NLTK handles typical clinical sentence boundaries accurately
 - Optional post-processing can split excessively long sentences if needed
 
-Conclusion:
+**Conclusion:**
 
 - NLTK-based sentence segmentation is deterministic, accurate, and lightweight
 - Preserves both text content and offset integrity
@@ -676,21 +676,57 @@ Conclusion:
 
 ---
 
-
 ## Entity Schema Operationalisation
 
-### 1. Purpose
+### 1. Objective
 
-- Define the three clinically meaningful entity types to extract from ICU notes, finalising scope for Phase 2 deterministic extraction and preventing uncontrolled expansion.
-- These entities form the foundation of structured JSON outputs for downstream use.
+**Purpose**
+- Define the scope of entity extraction: `SYMPTOM`, `INTERVENTION`, `COMPLICATION`
+- Establish a structured schema for downstream validation and analysis
+- Constrain scope to prevent uncontrolled expansion of entity types
+
+**Key Principles**
+- Deterministic extraction (rule-based candidate generation)
+- Contextual validation (transformer-based filtering)
+- Prioritise precision over recall
+- Maintain auditability and traceability through structured outputs
 
 ---
 
-### 2. JSON Schema Definition
+### 2. System Overview (High-Level Architecture)
 
-The extraction pipeline outputs one JSON object per entity. This design preserves auditability, traceability, and downstream compatibility.
+**Pipeline Structure**
+1. Section-aware preprocessing and segmentation  
+2. Rule-based candidate generation (deterministic extraction)  
+3. Transformer-based validation (contextual classification)  
 
-Each extracted entity follows a **two-layer schema**:
+**Core Design Philosophy**
+- Rules generate candidates, not final truths  
+- The transformer performs contextual classification of candidate validity  
+- The system is explicitly designed as a hybrid pipeline, separating extraction from interpretation  
+
+**Entity-wise Responsibility Split**
+
+| Entity Type   | Rule Strength | Transformer Role        |
+|---------------|--------------|------------------------|
+| `SYMPTOM`       | Strong       | Refinement             |
+| `INTERVENTION`  | Moderate     | Filtering              |
+| `COMPLICATION`  | Weak         | Primary classification |
+
+**Key Interpretation**
+- `SYMPTOM`: rules capture most valid cases; transformer corrects errors in negation  
+- `INTERVENTION`: rules act as broad candidate generators; transformer determines true clinical validity by removing non-performed/planned cases  
+- `COMPLICATION`: rules act as broad candidate generators; transformer determines true clinical validity by removing historical/resolved cases and confirming acuity
+
+---
+
+### 3. JSON Schema (Structure Only)
+
+The extraction pipeline outputs one JSON object per entity. This ensures auditability, traceability, and compatibility with downstream validation and analysis.
+
+Each entity follows a two-layer schema:
+- **Extraction layer** (deterministic rules)
+- **Validation layer** (transformer classification)
 
 ```json
 {
@@ -708,459 +744,486 @@ Each extracted entity follows a **two-layer schema**:
   "sentence_text": "string",
   "section": "string",
 
-  "negated": true,
+  "negated": true | false | null,
 
   "validation": {
-    "is_valid": true,
-    "confidence": 0.0,
+    "is_valid": true | false,
+    "confidence": 0-1,
     "task": "symptom_presence | intervention_performed | complication_active"
   }
 }
 ```
 
-#### 2.1 Considerations and Decisions
+**Schema Layers**
 
-1. Multiple entities per report: 
+| Layer        | Description |
+|--------------|-------------|
+| Metadata     | Identifiers linking entity to note and patient (IDs)|
+| Extraction   | Raw entity output from rule-based system |
+| Provenance   | Text span and contextual location within the note |
+| Signal       | Lightweight rule-derived signal (negation) |
+| Validation   | Transformer-based contextual classification |
 
-- A single ICU note may generate multiple JSON objects corresponding to each entity detected across all three entity types.
-- `note_id`, `subject_id`, and other identifiers ensure entities can be grouped back to the originating note or patient.
+**Field Groups**
 
-2. Concept vs surface form:
-
-- `entity_text` is the precise term identified in the note.
-- `concept` is the high-level normalised category to which the entity belongs.
-
-3. Section awareness:
-
-- Extraction is section-specific: each entity is mapped to its section (HPI, Chief Complaint, etc.).
-- Sections allow filtering, prioritisation, and downstream analyses that depend on note structure.
-
-4. Negation handling:
-
-- `negated` is primarily meaningful for `SYMPTOM`, but it is still included for all entities for schema consistency
-- Negation does exist and can be detected in all 3
-- negation isn tthe goal for all 3, Because your goal is not detecting negation.
-
-Entity
-Real question
-SYMPTOM
-Is the symptom present?
-INTERVENTION
-Was it performed?
-COMPLICATION
-Is it an active condition?
-
-
-
-- **Interpretation by entity type:** negation is critical for `SYMPTOM` (e.g., "denies chest pain" is clinically meaningful), not that improtant for `INTERVENTION` (e.g., "no intubation" weak signal as doesnt cover the other patterns we want, Negation is incomplete and unreliable), and not as improtant for `COMPLICATION` (e.g., "no evidence of sepsis" weak signal as it doesnt cover other patterns we want, Negation captures only a small fraction of reality).
-- Schema is uniform but only one entity type (SYMPTOM) has a strong signal from negation, so we will populate with boolean for all entities but only interpret it for SYMPTOM. For the other entity types, it will always be  null, and we will ignore it in downstream analyses.
-
-For SYMPTOM:
-	•	It is high value, low cost, high accuracy, reliable
-	•	It solves a major part of the problem
-  - since for symptoms this is basically the criticalsignal and sort of ground truth for the entity, it is worth including even if it is not perfect, because it provides a strong signal for the presence or absence of symptoms, which is essential for transformer validation.
-  - therefore we populate with boolean
-
-For INTERVENTION / COMPLICATION:
-	•	It is insufficient alone. negation can be accurate but is not the primary signal, it is only partial, it misses acute vs chronic or planned vs performed distinctions, which are more important for these entity types
-	•	so still partially informative but not covering the main problem. 
-  - therefore there is no point to include it, we will always have null for these entity types, and it may cause confusion or misinterpretation if we include it.
-  - However, including it in the schema allows for future expansion if we later develop more sophisticated negation handling for these entity types, and it maintains a consistent schema across all entities.
-
-Key insight
-
-For SYMPTOM:
-
-Negation directly answers the question
-	•	“no chest pain” → absent ✔
-	•	“chest pain” → present ✔
-
-So:
-
-Negation ≈ ground truth (most of the time)
-
-⸻
-
-For INTERVENTION:
-
-Negation only answers one narrow case
-	•	“no intubation” → not performed ✔
-
-But:
-	•	“intubation planned” → not performed ❌ (negation fails)
-	•	“may require intubation” → not performed ❌
-	•	“intubated” → performed ✔
-
-So:
-
-Negation is incomplete and unreliable
-
-⸻
-
-For COMPLICATION:
-
-Same problem:
-	•	“no sepsis” → not active ✔
-
-But:
-	•	“history of sepsis” → not active ❌ (negation fails)
-	•	“resolved sepsis” → not active ❌
-	•	“?sepsis” → uncertain ❌
-
-So:
-
-Negation captures only a small fraction of reality
-
-Correct approach:
-	•	SYMPTOM → negated = true/false
-	•	INTERVENTION / COMPLICATION → negated = null
-
-Why this is better:
-	•	Avoids implying it is meaningful when it is not
-	•	Prevents downstream misuse
-	•	Makes schema semantically correct
-
-You suggested:
-
-“Why not also detect planned/history/resolved?”
-
-Because:
-	•	It becomes:
-	•	complex
-	•	brittle
-	•	incomplete
-	•	And still:
-	•	fails on unseen phrasing
-
-And critically:
-
-The transformer already sees the full sentence and does this better
-
-
-5. Transformer Validation:
-
-Candidate generation (rules) + candidate filtering (model)
-
-- `validation` does not mean the same thing for all entities, it is for contextual validation of the entity's clinical relevance and correctness rather than a pure confidence score.
-- we now have 
-
-  "validation": {
-    "is_valid": true,
-    "confidence": 0.0,
-    "task": "symptom_presence | intervention_performed | complication_active"
-  }
-
-- is_valid is the model's binary judgement on whether the entity is clinically valid in context (e.g., true symptom, performed intervention, active complication).
--  confidence is the model's confidence score for that judgement, which can be used for thresholding or prioritisation in downstream analyses, metrics computation or error analysis.
-- task indicates the specific validation task relevant to the entity type, which guides interpretation of the is_valid and confidence fields.
-- we have made validation more explicit and structured to reflect its critical role in confirming the clinical relevance of extracted entities, especially given the limitations of deterministic rules and negation handling.
-- this is specifically like this to explicitly avoid the misconception that the validation is a general confidence score for the entity extraction, when in reality it is a specific judgement on the clinical validity of the entity in context, which is essential for filtering out false positives and ensuring high-quality structured data for downstream use. 
-
-- For `SYMPTOM`, it reflects the likelihood that the entity is a true symptom based on context. Presence + context + negation correctness
-- For `INTERVENTION`, it reflects the likelihood that the action was actually performed or occured rather than planned or hypothetical.
-- For `COMPLICATION`, it reflects the likelihood that the entity represents a true current/acute complication rather than a historical diagnosis or resolved issue.
-
-
-
-6. Provenance and downstream use:
-
-- Character offsets (`char_start`, `char_end`) preserve exact positioning in the raw note, supporting traceability, auditing, or text alignment.
-- `sentence_text` provides surrounding context to support transformer-based validation and auditability.
-- `section` allows for structural filtering and analysis based on note organization.
+| Group        | Fields |
+|--------------|--------|
+| Metadata     | `note_id`, `subject_id`, `hadm_id`, `icustay_id` |
+| Extraction   | `entity_text`, `concept`, `entity_type` |
+| Provenance   | `char_start`, `char_end`, `sentence_text`, `section` |
+| Signal       | `negated` |
+| Validation   | `is_valid`, `confidence`, `task` |
 
 ---
 
-### 3. Entity Types 
+### 4. Core Design Decisions
 
-Extraction in Phase 2 is strictly limited to three entity types which seperate clinical reasoning components and provide a clear, clinically relevant structure for downstream analysis:
+#### 4.1 Multiple Entities per Note
+- One JSON object is generated per entity
+- A single note may yield multiple entities across all types
+- Note-level identifiers enable grouping and reconstruction at patient or encounter level
 
-- **SYMPTOM** → subjective patient complaints or observed clinical signs → whats happening to the patient
-- **INTERVENTION** → actions performed to manage or treat the patient → what we are doing to the patient
-- **COMPLICATION** → acute adverse or pathological events occurring during ICU stay → what has gone wrong with the patient
+#### 4.2 Concept vs Surface Form
+- `entity_text` represents the exact span extracted from the note
+- `concept` represents the normalised clinical meaning
+- This separation enables standardisation while preserving original text
 
-Limiting to these three ensures:
+#### 4.3 Section Awareness
+- Each entity is linked to its originating section (e.g., HPI, Assessment)
+- Section context constrains extraction and supports downstream filtering and analysis
 
--	High precision and manageable rule creation
--	Separation between overlapping entity types
--	Clinically meaningful coverage without chasing unstructured data
-
----
-
-#### 3.1 SYMPTOM
-
-**Purpose:** Capture patient-reported complaints or clinician-observed manifestations.  
-**Rationale:** Symptoms represent the subjective or observable clinical state that informs interventions and complications.
-
-**Operational Decisions:**
-
-- **Inclusions:** Patient complaints (e.g., “chest pain”) and observed signs (e.g., “confused”).
-- **Exclusions:** Labs, imaging, baseline diagnoses, or interventions.
-- **Negation Handling:** Deterministic rules using “no”, “denies”, “without”, “not”. 
-- **Transformer Role:** Contextual validation to confirm the entity is a true symptom rather than a historical diagnosis or non-symptom mention, and fix negation errors.
-
-**Positive Extraction Examples**
-
-The following phrases should produce a SYMPTOM extraction:
-
-- "patient reports chest pain"
-- "complaining of nausea overnight"
-- "severe headache this morning"
-- "patient feeling dizzy"
-- "persistent shortness of breath"
-
-**Negative / Non-Extraction Examples**
-
-The following phrases should NOT produce a SYMPTOM extraction:
-
-- "history of migraine"
-- "CT shows intracranial hemorrhage"
-- "labs notable for elevated troponin"
-- "scheduled for CT scan"
-
-These represent diagnoses, tests, or history rather than symptoms.
-
-**Boundary Resolution**
-
-Ambiguous terms are resolved as follows:
-
-- tachycardia → `VITAL_MENTION` (not `SYMPTOM`)
-- hypotension → `VITAL_MENTION`
-- delirium → `SYMPTOM`
-- agitation → `SYMPTOM`
+#### 4.4 Provenance and Traceability
+- `char_start` and `char_end` preserve exact text alignment within the note
+- `sentence_text` provides local context for validation and auditing 
+- `section` records structural section origin within the document
 
 ---
 
-#### 3.2 INTERVENTION
+### 5. Negation Strategy (Critical Design Decision)
 
-**Purpose:** Capture therapeutic or procedural actions performed.  
-**Rationale:** Interventions document treatments and procedures, critical for understanding patient management.
+#### 5.1 Core Principle
 
-**Operational Decisions:**
-
-- **Inclusions:** Medications started during ICU stay (e.g., “started norepinephrine”) and procedures (e.g., “central line inserted”). Rule-based, but strict pattern matching to ensure high precision (e.g., "started X", "placed on Y", "administered Z").
-- **Exclusions:** Hypothetical plans, suggestions, or chronic medications not initiated due to ICU admission.
-- **Negation Handling:** Not reliable, not primary signal. Validate performed vs planned, which is a classification problem rather than pure negation.
-- **Transformer Role:** Contextual validation to confirm the entity represents an actual performed intervention or action rather than a plan, hypothetical, or recommendation. This is where rules-based negation handling is weakest, so transformer validation is critical to filter out non-interventions.
-
-**Positive Extraction Examples**
-
-The following phrases should produce an `INTERVENTION` extraction:
-
-- "started norepinephrine"
-- "intubated for airway protection"
-- "central line inserted"
-- "patient placed on ventilator"
-- "administered antibiotics"
-
-**Negative / Non-Extraction Examples**
-
-The following phrases should NOT produce an `INTERVENTION` extraction:
-
-- "plan to start antibiotics"
-- "consider dialysis"
-- "may require intubation"
-- "recommend central line placement"
-
-These represent future plans or recommendations rather than completed interventions.
-
-**Boundary Resolution**
-
-Ambiguous phrases are resolved as follows:
-
-- "started antibiotics" → `INTERVENTION`
-- "on antibiotics" → `INTERVENTION`
-- "intubation planned" → NOT extracted
+Negation is not uniformly informative across entity types. Its usefulness depends on whether it directly answers the underlying clinical question for that entity.
 
 ---
 
-#### 3.3 COMPLICATION
+#### 5.2 Entity-Level Interpretation
 
-**Purpose:** Capture adverse or pathological developments during ICU stay.  
-**Rationale:** Complications indicate negative outcomes or new pathological events, essential for downstream analysis and evaluation.
+| Entity Type   | Question Being Answered        | Role of Negation |
+|---------------|------------------------------|------------------|
+| SYMPTOM       | Is it present?               | Strong signal    |
+| INTERVENTION  | Was it performed?            | Weak signal      |
+| COMPLICATION  | Is it active?                | Weak signal      |
 
-**Operational Decisions:**
-
-- **Inclusions:** Acute clinically significant pathological conditions (e.g., "AKI", "sepsis", "pneumothorax"), both reason for ICU admission and new complications arising during stay. Rule-based candidate generation with broad patterns (e.g., "developed X", "new X", "patient with X"), but transformer validation is critical to confirm clinical relevance and acuity.
-- **Exclusions:** Chronic baseline diagnoses without acute worsening, past medical history, or resolved issues.
-- **Negation Handling:** Not reliable, not primary signal. Validation is a fully contextual and temporal classification problem rather than pure negation. 
-- **Transformer Validation:** Critical role, distinguishes between acute vs historical conditions, and active vs resolved conditions. This is where rules-based negation handling is weakest, so transformer validation is essential to filter out historical or non-complication mentions.
-
-**Positive Extraction Examples**
-
-The following phrases should produce a `COMPLICATION` extraction:
-
-- "developed sepsis overnight"
-- "new acute kidney injury"
-- "patient with pneumothorax"
-- "episode of ventricular arrhythmia"
-
-**Negative / Non-Extraction Examples**
-
-The following phrases should NOT produce a `COMPLICATION` extraction:
-
-- "history of chronic kidney disease"
-- "prior stroke"
-- "family history of cancer"
-
-These represent baseline or historical conditions.
-
-**Boundary Resolution**
-
-Ambiguous terms are resolved as follows:
-
-- AKI → `COMPLICATION`
-- sepsis → `COMPLICATION`
-- infection → `COMPLICATION`
-- chronic heart failure → NOT extracted unless acute worsening is described
+- Negation can be detected in all entity types  
+- However, only for `SYMPTOM` does it directly correspond to the target variable  
+- For `INTERVENTION` and `COMPLICATION`, negation captures only a narrow subset of cases and does not reflect the full decision space  
 
 ---
 
-### 4. Excluded Entity Types
+#### 5.3 Why Negation Works for SYMPTOM
 
-**Medications**
+Negation directly answers the clinical question:
 
-- Extremely large and complex category with high variability in naming, dosing, and context.
-- High risk of false positives due to mentions of chronic medications, medication allergies, or medication plans.
-- Not suitable for deterministic rule-based extraction without extensive lexicon and context handling, which is beyond the scope of Phase 2.
+- "no chest pain" → absent  
+- "chest pain" → present  
 
-**Vital Signs**
-
-- Highly inconsistent mentions of vital signs in clinical notes, often appearing as structured flowsheet data embedded within the text.
-- Difficult to reliably extract with deterministic rules due to variability in formatting, units, and context.
-
-**Laboratory Values**
-
-- Similar to vital signs, lab values are often embedded as structured data within notes, with high variability in formatting and context.
-- Extracting lab values would require complex rules to handle units, normal ranges, and contextual interpretation, which is beyond the scope of Phase 2.
-- Already captured in structured EHR data, so extraction from notes is not essential for downstream analyses.
+**Conclusion**
+- Negation provides a high-value, low-cost signal  
+- It approximates ground truth in most cases  
+- It is therefore used as a primary feature for symptom extraction and validation  
 
 ---
 
-### 5. Transformer Validation Role
+#### 5.4 Why Negation Fails for INTERVENTION and COMPLICATION
 
-You are doing:
-	•	inference-only classification
+Negation only captures a limited subset of interpretations:
 
-The model:
-	•	already understands language
-	•	already understands context (to some extent)
+| Phrase                     | True Interpretation     | Negation Sufficient |
+|---------------------------|-------------------------|---------------------|
+| no intubation             | not performed           | ✔                   |
+| intubation planned        | not performed           | ✘                   |
+| may require intubation    | not performed           | ✘                   |
+| intubated                 | performed               | ✔                   |
 
-You are just asking it:
-	•	“Is this real?”
-	•	“Is this present?”
-	•	“Was this done?”
+| Phrase                     | True Interpretation     | Negation Sufficient |
+|---------------------------|-------------------------|---------------------|
+| no sepsis                 | not active              | ✔                   |
+| history of sepsis         | not active              | ✘                   |
+| resolved sepsis           | not active              | ✘                   |
+| ?sepsis                   | uncertain               | ✘                   |
 
-A classifier over (sentence + entity)
-
-No training required.
-
-Deterministic layer (rules)
-
-High precision, low ambition:
-	•	SYMPTOM → yes (strong)
-	•	INTERVENTION → yes (restricted patterns only)
-	•	COMPLICATION → only as candidate generation (weak)
-
-Transformer layer
-
-Context understanding:
-	•	Validates symptoms (negation + context)
-	•	Filters interventions (performed vs planned)
-	•	Classifies complications/diagnoses (primary responsibility)
-
-Rules are used for:
-	•	high precision anchors (symptoms, meds, procedures)
-	•	candidate generation
-
-Models are used for:
-	•	disambiguation
-	•	context understanding
-	•	temporal reasoning
-	•	classification
-
-Phase 2 (rules)
-	•	extract:
-	•	symptoms (strong)
-	•	interventions (strict)
-	•	complication candidates (broad)
-
-Phase 3 (transformer)
-	•	validate:
-	•	negation (symptoms)
-	•	action vs plan (interventions)
-	•	diagnosis classification (complications)
-
-What that means for your entities
-
-SYMPTOM
-	•	Rules are strong → good coverage
-	•	Transformer = refinement
-
-INTERVENTION
-	•	Rules are moderate → decent candidates
-	•	Transformer = heavy filtering
-
-COMPLICATION
-	•	Rules are weak → broad candidates
-	•	Transformer = primary filter
-
-You are NOT doing ground-truth validation.
-
-You are doing:
-
-Post-extraction filtering using a model
-
-So “validation” =
-
-“Given this candidate, is it clinically valid in context?”
-
-Is it okay that transformer does most of the work for 2 entities?
-
-Yes.
-
-This is actually expected:
-
-Entity
-Rules strength
-Transformer reliance
-SYMPTOM
-Strong
-Medium
-INTERVENTION
-Medium
-High
-COMPLICATION
-Weak (candidate only)
-Very High
-
-That is a valid hybrid system
+**Conclusion**
+- Negation does not capture temporality, intent, or uncertainty  
+- It is therefore incomplete and unreliable as a primary signal  
 
 ---
 
-### 5. Summary
+#### 5.5 Final Design Decision
 
-Phase 2 extraction will only target `SYMPTOM`, `INTERVENTION`, and `COMPLICATION` to:
+| Entity Type   | negated Field |
+|---------------|--------------|
+| `SYMPTOM`       | `true` / `false` |
+| `INTERVENTION`  | `null`         |
+| `COMPLICATION`  | `null`         |
 
-- Ensure manageable rule creation and high precision
-- Prevent overlap and ambiguity between entity types
-- Provide structured, span-aligned JSON outputs ready for Phase 3 transformer validation
+**Rationale**
+- Use negation only where it is semantically aligned with the task  
+- Avoid introducing misleading or incomplete signals  
+- Maintain a consistent schema while restricting interpretation  
 
-This finalises the scope of entity extraction for Phase 2. We are doing:
+---
 
-	•	deterministic extraction system
-	•	section-aware parsing
-	•	negation handling
-	•	candidate generation
-	•	transformer validation layer
+#### 5.6 Why Not Expand Rule-Based Context (Planned / History / Resolved)?
 
-You are building:
-	•	A candidate generator (rules)
-	•	A context classifier (transformer)
+- Requires complex and brittle rule sets  
+- Fails on linguistic variability and unseen phrasing  
+- Does not generalise reliably across notes  
 
-The JSON reflects BOTH:
-	•	Raw extraction (entity_text, negated)
-	•	Model judgement (validation)
+**Key Decision**
+- Do not encode extended context (e.g., planned, historical, resolved) using rules  
+- Delegate contextual interpretation to the transformer, which operates on full sentence context  
 
+---
+
+### 6. Transformer Validation Layer
+
+#### 6.1 Purpose
+- Perform contextual validation of rule-extracted candidates
+- Operates as inference-only classification (no training)
+- Converts candidate spans into clinically meaningful, context-aware decisions
+
+**Key Clarification**
+- Validation ≠ ground truth  
+- Validation ≠ extraction confidence  
+- Validation = contextual correctness of the candidate entity
+
+---
+
+#### 6.2 Validation Tasks
+
+Each entity type maps to a specific classification task:
+
+| Entity Type   | Task                     |
+|---------------|--------------------------|
+| `SYMPTOM`       | `symptom_presence`         |
+| `INTERVENTION`  | `intervention_performed`   |
+| `COMPLICATION`  | `complication_active`      |
+
+These tasks define what the model is actually deciding, not just whether the span exists.
+
+---
+
+#### 6.3 Input–Output Formulation
+
+**Input to model**
+- Sentence context (`sentence_text`)
+- Candidate entity (`entity_text`)
+
+**Output**
+```json
+{
+  "is_valid": true,
+  "confidence": 0.0,
+  "task": "..."
+}
+```
+
+---
+
+#### 6.3 Output Interpretation
+
+| Field        | Meaning |
+|--------------|--------|
+| `is_valid`     | Binary judgement of clinical validity in context |
+| `confidence`   | Model confidence in that judgement |
+| `task`         | Defines what “valid” means for the entity type |
+
+- `is_valid` is the primary decision variable
+- `confidence` supports thresholding, ranking, and error analysis
+- `task` ensures interpretation is aligned with entity semantics
+
+---
+
+#### 6.5 Role in the Pipeline
+
+The system is explicitly hybrid:
+
+- Rules → generate candidates (high precision, limited understanding)
+- Transformer → validate candidates (contextual understanding)
+
+Division of responsibility
+
+| Component   | Responsibility |
+|-------------|----------------|
+| Rules       | Pattern matching, span extraction, candidate generation |
+| Transformer | Context understanding, disambiguation, classification |
+
+This separation prevents overfitting rules to linguistic complexity.
+
+---
+
+#### 6.6 Role by Entity Type
+
+**SYMPTOM**
+
+- Refines already strong rule outputs
+- Corrects negation and contextual misclassification
+- Ensures true symptom presence
+
+**INTERVENTION**
+
+- Filters candidates to retain only performed actions
+- Removes plans, recommendations, and hypotheticals
+- Handles intent vs execution
+
+**COMPLICATION**
+
+- Acts as the primary classifier
+- Distinguishes acute vs historical vs resolved conditions
+- Performs most of the semantic interpretation
+
+---
+
+#### 6.7 Why Transformer Validation is Necessary
+
+Rule-based extraction cannot reliably capture:
+
+- Context (e.g., history vs current)
+- Temporality (acute vs resolved)
+- Intent (planned vs performed)
+- Uncertainty (suspected vs confirmed)
+
+Attempting to encode these with rules leads to:
+
+- High complexity
+- Poor generalisation
+- Fragility to phrasing variation
+
+Key Decision:
+
+- Delegate contextual reasoning to the transformer, which operates on full sentence context
+
+---
+
+#### 6.8 System Behaviour Summary
+
+| Entity Type   | Rule Strength | Transformer Reliance  |
+|---------------|--------------|------------------------|
+| `SYMPTOM`      | Strong       | Medium (refinement)   |
+| `INTERVENTION`  | Moderate     | High (filtering)     |
+| `COMPLICATION`  | Weak         | Very High (primary classification)  |
+
+- The system is intentionally asymmetric across entity types  
+- Transformer reliance increases as rule reliability decreases  
+- This reflects the differing complexity of each extraction task  
+
+---
+
+### 7. Entity Type Definitions (Concise + Non-Redundant)
+
+#### 7.1 Included Entity Types
+
+Extraction in Phase 2 is strictly limited to three entity types that separate core components of clinical reasoning and provide a structured representation of ICU notes:
+
+- **SYMPTOM** → patient state (what is happening to the patient)  
+- **INTERVENTION** → clinical actions (what is being done)  
+- **COMPLICATION** → adverse pathology (what has gone wrong)  
+
+This constraint ensures:
+- High precision and controlled rule design  
+- Clear separation between entity types  
+- Clinically meaningful but tractable coverage 
+
+---
+
+#### 7.2 SYMPTOM
+
+**Definition**
+- Patient-reported complaints or clinician-observed manifestations  
+
+**Include**
+- Subjective symptoms (e.g., pain, nausea)  
+- Observable clinical states (e.g., confusion, agitation)  
+
+**Exclude**
+- Laboratory values  
+- Imaging findings  
+- Diagnoses or conditions  
+
+**Rules Role**
+- Strong, high-precision extraction  
+
+**Transformer Role**
+- Contextual refinement (negation + disambiguation)  
+
+**Boundary Notes**
+- delirium → `SYMPTOM`   
+- agitation → `SYMPTOM`   
+- hypotension / tachycardia → not `SYMPTOM` 
+
+---
+
+#### 7.3 INTERVENTION
+
+**Definition**
+- Therapeutic or procedural actions performed on the patient  
+
+**Include**
+- Procedures (e.g., intubation, line insertion)  
+- Treatments initiated (e.g., medications started)  
+
+**Exclude**
+- Planned or hypothetical actions  
+- Recommendations or considerations  
+- Chronic/background treatments not initiated in ICU context  
+
+**Rules Role**
+- Moderate-precision candidate generation (pattern-restricted)  
+
+**Transformer Role**
+- Filtering: performed vs planned/hypothetical  
+
+**Boundary Notes**
+- “started X”, “placed on Y” → `INTERVENTION`  
+- planned or suggested actions → not extracted 
+
+---
+
+#### 7.4 COMPLICATION
+
+**Definition**
+- Acute or active pathological conditions during ICU stay  
+
+**Include**
+- New or ongoing clinically significant conditions  
+- Acute complications or reasons for ICU admission  
+
+**Exclude**
+- Historical conditions  
+- Chronic baseline diagnoses without acute change  
+- Resolved conditions  
+
+**Rules Role**
+- Broad candidate generation (low precision by design)  
+
+**Transformer Role**
+- Primary classification (acute vs historical vs resolved)  
+
+**Boundary Notes**
+- AKI, sepsis, pneumothorax → `COMPLICATION`  
+- chronic conditions → not extracted unless acute worsening is indicated 
+
+---
+
+### 8. Excluded Entity Types (Scope Control)
+
+#### 8.1 Medications
+
+- Extremely large and heterogeneous category (naming, dosing, formulations)  
+- Requires extensive ontology and normalization  
+- High false positive risk (e.g., chronic meds, allergies, plans)  
+- Cannot be reliably captured with simple deterministic rules  
+
+**Decision**
+- Excluded due to complexity and low precision under rule-based extraction  
+
+---
+
+#### 8.2 Vital Signs
+
+- Frequently embedded as semi-structured or tabular text  
+- Highly variable formatting and units  
+- Difficult to extract consistently with rules  
+
+**Additional Constraint**
+- Already available in structured EHR data  
+
+**Decision**
+- Excluded due to redundancy and extraction unreliability  
+
+---
+
+#### 8.3 Laboratory Values
+
+- Complex structure (values, units, reference ranges)  
+- Requires interpretation beyond simple span extraction  
+- High variability in formatting within notes  
+
+**Additional Constraint**
+- Already captured in structured EHR datasets  
+
+**Decision**
+- Excluded due to complexity, low reliability, and lack of added value  
+
+---
+
+#### 8.4 Summary Rationale
+
+All excluded types share at least one of the following:
+- Require complex normalization or interpretation  
+- Are poorly suited to deterministic rule-based extraction  
+- Are already available in structured form  
+
+**Key Principle**
+- Prioritise high-precision, clinically meaningful entities that benefit from text extraction  
+
+---
+
+### 9. Design Trade-offs and Justification
+
+The system adopts a hybrid architecture (rules + transformer) to balance precision, control, and contextual understanding.
+
+**Why hybrid**
+- Rules provide high-precision, interpretable candidate extraction
+- Transformer provides contextual validation and disambiguation
+- Combined approach = controlled + context-aware
+
+**Limitations of rule-only systems**
+- Brittle to linguistic variation  
+- Cannot capture context, temporality, or intent  
+- Requires exponential rule complexity for marginal gains  
+
+**Limitations of ML-only extraction**
+- Reduced interpretability and traceability  
+- No deterministic baseline for debugging  
+- Harder to audit, validate, and control outputs  
+
+**Final design position**
+- Rules = deterministic candidate generator
+- Transformer = context-aware validation layer 
+
+This separation ensures:
+- High precision at extraction stage  
+- Robust handling of clinical language variability  
+- Maintainable and auditable system design  
+
+---
+
+### 10. Summary
+
+**Scope**
+- Extraction limited to: `SYMPTOM`, `INTERVENTION`, `COMPLICATION`  
+- Ensures high precision, clear boundaries, and manageable rule design  
+
+**System Components**
+- Rule-based extraction (candidate generation)  
+- Negation handling (SYMPTOM only)  
+- Transformer validation (contextual classification)  
+
+**Conceptual Model**
+- Rules → propose candidates  
+- Transformer → determine clinical validity  
+
+**Outputs**
+- One structured JSON object per entity  
+- Span-aligned and traceable  
+- Context-aware (sentence + section)  
+- Model-validated (`is_valid`, `confidence`, `task`)  
+
+**Final Position**
+- Deterministic, section-aware extraction pipeline  
+- Hybrid system combining rule precision with model-based context understanding  
 
 ---
 
@@ -1168,132 +1231,367 @@ The JSON reflects BOTH:
 
 ### 1. Objective
 
-Rule-based extraction applies deterministic pattern rules to identify entities belonging to the predefined schema (**SYMPTOM, INTERVENTION, COMPLICATION**) within sectioned clinical notes.
+The objective of rule-based extraction is to provide a controlled, deterministic, high-precision, and schema-constrained method for identifying specific entity types within clinical text.
 
-This component is not intended to be a complete clinical NLP system. Instead, it serves as a controlled, deterministic reference system that produces stable, reproducible, and span-aligned outputs for downstream validation.
-
-The system is defined by four core properties:
-- Deterministic: identical input produces identical output  
-- High precision: extracted entities are expected to be correct  
-- Span-aligned: all entities map to original character offsets  
-- Schema-constrained: limited strictly to the three predefined entity types  
-
-Rule design prioritises prototypical ICU expressions and clear lexical patterns, favouring precision over recall. It does not attempt to capture all linguistic variation or achieve exhaustive coverage. Instead, it extracts representative, high-confidence instances of each entity type, forming a reliable baseline for comparison with transformer-based methods.
+- Following section extraction and sentence segmentation, this stage defines three sets of deterministic rules to extract the entities: **SYMPTOM, INTERVENTION, COMPLICATION**
+- Rules are based on prototypical ICU language and clear lexical patterns, rather than attempting full linguistic coverage
+- The component functions as a candidate generation layer within a hybrid pipeline, not a full clinical NLP system
+- Outputs are structured, stable, interpretable, and span-aligned, making them suitable for downstream transformer validation
 
 ---
 
-### 2. Rule Based Extraction Decision
+### 2. Rule-Based Extraction Decisions
 
-Rule-based extraction is grounded in the Phase 2 schema operationalisation, which defines three entity types to extract:
+Rule development is fully constrained by prior schema operationalisation, which defines what should be extracted, what should be excluded, and how outputs must be structured. This removes ambiguity and limits the scope of rule design to clearly defined entity boundaries. As a result:
 
-- **SYMPTOM**
-- **INTERVENTION**
-- **COMPLICATION**
+- Rules focus only on high-confidence, clearly expressed patterns
+- Edge cases, ambiguity, and complex language are intentionally not handled at this stage
+- Responsibility for deeper interpretation is deferred to the transformer layer
 
-Each entity is governed by explicit inclusion/exclusion criteria, negation cues, and prototypical trigger patterns. The extraction engine applies deterministic pattern matching to identify candidate entities within sectioned note text, strictly adhering to these predefined definitions.
+Rules were constructed through targeted inspection of sectioned ICU notes, identifying common and generalisable phrasing patterns and translating them into regex-based rules. This process is guided by theory-guided clinical intuition and pattern recognition rather than dataset optimisation. The approach is intentionally constrained:
 
-Also, the predefined JSON schema ensures that all extracted entities are represented in a consistent, structured format, facilitating traceability and downstream analysis.
+- No attempt at exhaustive coverage or ontology expansion, with minimally iterative rule design 
+- No tuning to maximise dataset performance, not data-fitted or over-optimised to specific note characteristics
+- No encoding of complex linguistic structure (e.g. full negation scope, uncertainty), stopped when additional rules would yield diminishing returns or require complex, brittle logic
 
-This structure also allows the logic to have already been defined for what we are extracting, and espeically the types of rules we need to implement or not need to implement, and also allows us to extract where we know we can do a good job with rules, and leave the harder cases for the transformer to validate.
+This ensures the system remains:
 
-The json schema also allows us to have a clear separation between the deterministic extraction layer (rules) and the contextual validation layer (transformer), which is critical for ensuring that we are not overfitting rules to the data, and that we are providing a stable, reproducible output for the transformer to work with.
+- Deterministic and reproducible 
+- Interpretable and easy to reason about 
+- Robust to overfitting and dataset-specific quirks, preserving generalisability
 
-Rule development was guided by targeted inspection of a small sample of ICU notes from section extraction validation (`validate_section_extraction.py`). High-frequency, clinically meaningful patterns were identified and iteratively translated into deterministic rules, prioritising precision and reproducibility over exhaustive coverage.
-
-This constrained approach prevents scope creep, ensures span-aligned and clinically coherent outputs, and provides a stable foundation for downstream transformer validation in Phase 3.
-
----
-
-Rule-Based Symptom Extraction
-	•	A rule-based approach was developed to extract symptom entities from clinical notes.
-	•	Initial rules were derived from observed linguistic patterns (e.g. complaint expressions, descriptive phrases).
-	•	The system was iteratively refined through evaluation on a validation subset of notes.
-	•	Rules were designed to prioritise:
-	•	high recall through broad pattern matching
-	•	precision through exclusion filters and negation handling
-	•	Development was stopped when additional rules produced minimal improvement in extraction performance.
-
-  The approach focuses on pattern generalisation rather than exhaustive vocabulary enumeration, improving scalability across unseen data.
-
-  we are starting with general ICU convention, and then light validation on notes, we do not iteratively fit rules to the dataset, as this would lead to overfitting and loss of generalisability. this is theory driven rule design with light validation, not data-driven rule fitting.
+Overall, the rule-based layer provides a limited but reliable extraction mechanism, designed to generate clean, structured candidates for downstream validation rather than solve the full extraction problem.
 
 ---
 
-Layer
-What it adds
-Section filtering
-removes irrelevant context
-Concept grouping
-maps many phrases → one clinical meaning
-Negation handling
-prevents false positives
-Context rules
-e.g. ROS vs exam vs plan
-Pipeline integration
-feeds downstream ML
+### 3. SYMPTOM Extraction
 
-Is it okay that you only have ~10 symptoms?
+Rule-based symptom extraction identifies patient-reported clinical features using deterministic, concept-level regex patterns with lightweight negation handling.
 
-Yes — if they are chosen correctly.
+---
 
-You are not building:
-	•	a clinical ontology
-	•	a full medical NER system
+#### 3.1 Extraction Decisions
 
-You are building:
-	•	a demonstration of pipeline design + engineering judgment
-  a minimal, concept-level clinical IE system that produces stable, reproducible outputs for downstream validation.
+**A. Section scope**
 
-What matters is NOT coverage
+- Symptom extraction is restricted to just 3 relevant sections: **chief complaint**, **hpi**, **review of systems**
+- These sections were selected because they contain the majority of subjective, patient-reported symptoms. 
+- Other sections are excluded to avoid extracting non-symptom content and reduce false positives. This enforces contextual precision at the earliest stage.
 
-It is:
-	•	clarity of logic
-	•	correctness of extraction
-	•	explainability
-	•	integration with ML
+---
 
-You want:
+**B. Concept-based pattern design**
 
-“representative coverage of common ICU symptom patterns”
+Symptoms are modelled as concepts, each mapped to a set of synonymous lexical patterns (regex).
 
-NOT:
+- One clinical concept → many lexical variants (e.g. “shortness of breath”, “SOB”, “dyspnoea” → dyspnoea)
+- Patterns are designed to capture common ICU phrasing, not all possible expressions
 
-“complete medical coverage”
+A total of 17 symptom concepts were defined:
 
-key concept is at the core all rule-based clinical NLP reduces to controlled lexical matching, tehcnically at a crude basic level its keywrod extraction, however :
+- Guided by clinical heuristics and expert judgement
+- Anchored to common ICU presentations (e.g. Maryland short-stay critical care study, PMID: 28323374)
 
-	•	constraint layering
-	•	pipeline integration
-	•	output structure
-	•	evaluation
+Limited deliberately to a small set of high-yield, representative features:
 
-is what makes rule based extraction a non-trivial engineering task that requires careful design and judgment. this is constrained, concept-level candidate generation in a clinical IE pipeline, not a full medical NER system or ontology development.
+- This avoids ontology construction as the goal is representative coverage of common patterns, not exhaustive medical vocabulary  
+- Restricting the concept set improves precision, interpretability, and stability of outputs  
 
-You are NOT:
-	•	oversimplifying incorrectly
-	•	misunderstanding rule-based NLP
-	•	missing some “hidden complexity”
+---
 
-You ARE:
-	•	implementing the core mechanism correctly
-	•	at a controlled scale
-	•	with proper engineering structure
+**C. Token–character alignment**
 
-  ---
+Regex matching operates on character indices, while negation operates on tokens (words). A mapping step is therefore required.
 
-  Why deduplication is REQUIRED
+- Sentences are tokenised into words
+- Each token is mapped to its character span e.g., `[("chest", 0, 5), ("pain", 6, 10)]`
+- The regex match start index is aligned to the corresponding token index (e.g., match at char index 6 → token index 1)
 
-Because regex cannot understand:
-	•	overlap
-	•	semantics
-	•	hierarchy
+This allows:
+- Locating the matched symptom within the sentence as a word position (token index)
+- Enabling token-based negation logic
 
-So you must enforce it manually.
+Without this step, negation detection cannot be applied correctly.
 
+---
 
-Characteristics of Short-stay Critical Care Admissions From Emergency Departments in Maryland
+**D. Global span alignment**
 
+Regex matches are found at the sentence level, but outputs must align to the original note section.
 
-- The 17 symptoms included in this extraction were selected based on clinical heuristics and expert opinion, anchored to the most common presenting features of ICU admissions as reported in the Maryland short-stay critical care study (Characteristics of Short-stay Critical Care Admissions From Emergency Departments in Maryland PMID: 28323374). 
-- Only patient-reported features (subjective symptoms) were included; objective signs such as vital parameters or laboratory abnormalities are captured separately by the vitals/entity extraction pipeline. 
-- This approach ensures relevance to ICU presentations while maintaining clear distinction between symptoms and signs.
+- Sentence-relative indices are converted to note-level character offsets 
+- Achieved by adding the sentence start offset to match indices (e.g., match at sentence char index 6, sentence starts at section char index 100 → global char index 100 + 6 = 106)
+
+This ensures:
+- Exact span traceability to the original note text allowing inclusion in the final JSON output
+- Compatibility with downstream validation and annotation  
+
+---
+
+**E. Negation detection (design and scope)**
+
+A lightweight, token-based negation rule is applied:
+
+- Scan tokens preceeding the matched symptom within the same sentence (using its token index)
+- Activate negation if a term is found:`no`, `denies`, `without`, `negative`, etc.
+- Deactivate if a break term appears: `but`, `however`, etc.
+
+**What it captures well:**
+- “no chest pain” → negated `pain` concept
+- “denies nausea” → negated `nausea` concept
+- “without fever” → negated `fever` concept
+
+**Limitations:**
+- Does not capture conjunction scope (“no chest pain or SOB”)  
+- Does not model syntax (“not complaining of pain”)  
+- Does not capture uncertainty (“unlikely to have pain”)  
+
+This simplification is intentional:
+- Negation is treated as local, linear, and word-triggered, capturing the most common, high-yield patterns cheaply  
+- Complex contextual interpretation is delegated to the transformer  
+
+The rule provides a fast, high-precision signal rather than full linguistic modelling.
+
+---
+
+**F. Deduplication (per sentence)**
+
+A constraint is applied of maximum one instance per concept per sentence
+
+- Implemented using a per-sentence `seen_concepts` set  
+- Prevents duplicate matches from overlapping or repeated patterns  
+
+Rationale:
+- Regex cannot resolve semantic duplication or overlap  
+- Prevents repeated extraction of the same concept within a sentence  
+
+Limitation:
+- Multiple mentions of the same concept in a sentence collapse to one 
+- Example: “chest pain and abdominal pain” → one `pain` concept extracted  
+
+This is accepted because:
+- The system operates at concept level, not span enumeration  
+- Precision and stability are prioritised over exhaustive extraction  
+
+Concepts may still repeat across sentences, preserving document-level signal.
+
+---
+
+**Overall design rationale**
+
+The symptom extraction component explicitly avoids:
+
+- Full linguistic modelling  
+- Exhaustive symptom coverage  
+- Ontology or hierarchy construction  
+- Dataset-specific optimisation  
+
+The symptom extraction logic intentionally combines:
+
+- Controlled lexical matching  
+- Clear concept mapping  
+- Minimal, interpretable rules  
+- Stable integration within the pipeline  
+
+The result is a high-precision, concept-level candidate generator that:
+
+- Captures clear and common symptom expressions  
+- Avoids encoding complex language rules  
+- Produces structured, span-aligned outputs ready for transformer validation  
+
+---
+
+#### 3.2 Workflow Implementation
+
+All code logic is implemented in `symptom_rules.py`, which defines the functions `map_char_to_token()`, `is_negated_simple()`, and `extract_symptoms()`. The main function `extract_symptoms()` applies the extraction across all sentences in the target sections of a note. 
+
+**Workflow**
+
+1. **Section filtering**  
+  - Input text is processed only if its section belongs to the predefined symptom-relevant set (Chief Complaint, HPI, ROS).  
+  - Non-target sections are skipped entirely.
+
+2. **Sentence segmentation**  
+  - Section text is split into sentences using `split_into_sentences()`.  
+  - Each sentence retains start/end character offsets relative to the original text.
+
+3. **Per-sentence initialisation**  
+  - For each sentence:  
+    - Original text and offsets are stored  
+    - A lowercased version is created for regex matching  
+    - Token–character mapping is generated using `map_char_to_token()`  
+    - A per-sentence `seen_concepts` set is initialised for deduplication  
+
+4. **Concept-level pattern matching**  
+  - For each predefined symptom concept:  
+    - Iterate through its associated regex patterns  
+    - Apply `re.search()` to detect the first match in the sentence  
+    - Skip concept if already matched in the current sentence  
+
+5. **Span extraction and alignment**  
+  - If a match is found:  
+    - Convert sentence-level match indices → global character offsets  
+      - `global_start = sentence_start + match.start()`  
+      - `global_end = sentence_start + match.end()`  
+    - Extract exact text span from the original note  
+
+6. **Token index identification**  
+  - Identify which token corresponds to the start of the matched span by comparing character ranges  
+  - This provides the token index required for negation detection  
+
+7. **Negation detection**  
+  - Apply `is_negated_simple()` using tokens and the identified token index  
+  - Scan preceding tokens to determine whether negation is active  
+  - Assign `negated = True / False`  
+
+8. **Deduplication enforcement**  
+  - Once a concept is matched in a sentence:  
+    - It is added to `seen_concepts`  
+    - Further matches of the same concept in that sentence are ignored  
+
+9. **Entity construction**  
+  - A structured SYMPTOM entity is created containing:  
+    - Identifiers (note, subject, admission, ICU stay)  
+    - Extracted span (`entity_text`, `char_start`, `char_end`)  
+    - Concept label  
+    - Context (`sentence_text`, `section`)  
+    - Negation flag  
+    - Validation placeholder for downstream transformer  
+
+10. **Aggregation and output**  
+  - All extracted entities across sentences are collected into a list  
+  - The final output is a list of structured `SYMPTOM` entities, ready for downstream validation  
+
+---
+
+#### 3.3 Validation Metrics and Manual Sample Analysis
+
+Validation was performed using `validate_symptom_rules.py` on a random sample of 30 ICU notes. The objective was to verify that the rule-based SYMPTOM extraction behaves as designed under realistic conditions, focusing on section filtering, extraction behaviour, concept mapping, negation handling, and span alignment.
+
+**Validation Logic**
+
+1. **Sampling**
+  - Random sample of ICU notes from the corpus
+  - Ensures representative variation in structure and content
+
+2. **Section Extraction**
+  - Notes are parsed into sections
+  - Only 3 target sections (Chief Complaint, HPI, ROS) are processed for symptom extraction
+
+3. **Symptom Extraction**
+  - Each target section is processed independently
+  - Pipeline:
+    - Sentence segmentation
+    - Regex-based symptom detection
+    - Token-level negation detection
+    - Per-sentence concept deduplication
+
+4. **Tracking and Metrics**
+  - Section coverage
+  - Extraction yield (per note and total)
+  - Concept distribution
+  - Negation behaviour
+
+5. **Qualitative Inspection**
+  - Raw outputs printed per note for manual inspection
+  - Enables verification of span accuracy, concept mapping, and negation
+
+---
+
+**Key Findings**
+
+**A. Section Coverage**
+
+- Notes with any sections: 19 / 30  
+- Notes with target sections: 9 / 30  
+- Notes without target sections: 21 / 30 
+
+This confirms:
+- Section filtering is functioning correctly
+- Extraction is appropriately restricted to clinically relevant regions
+- Low coverage reflects variability in note structure rather than extraction failure
+
+---
+
+**B. Extraction Yield**
+
+- Total symptoms extracted: 21  
+- Average per note (with target sections): 2.33  
+- Notes with sections but no symptoms: 3 / 9 (33.3%)
+
+Extraction is conservative, consistent with a high-precision candidate generation design.  
+Absence of symptoms in some notes reflects either true absence of symptom language or mismatch with predefined patterns, not uncontrolled behaviour.
+
+---
+
+**C. Concept Distribution**
+
+- Dominant concept: `pain` (9)
+- Secondary concepts: `syncope` (3), `cough` (2)
+- Broad coverage across multiple symptom categories
+
+This distribution reflects:
+- Expected ICU presentation patterns (pain-dominant)
+- Correct functioning of concept-level mapping (multiple phrases → single concept)
+
+Example (Note 3):
+- “chest pain” → pain  
+- “LOC” → syncope  
+
+---
+
+**D. Negation Behaviour**
+
+- Negated: 8 (38.1%)  
+- Not negated: 13 (61.9%)
+
+**Correct handling of simple negation patterns**
+- Note 2: “Fever” → negated=True (from “No(t) Fever”)  
+- Note 19:  
+  - “n/v” → negated=True  
+  - “SOB” → negated=True  
+  - “cough” → negated=True  
+  - “palpitations” → negated=True  
+
+**Correct handling of positive symptoms in same note**
+- Note 19:  
+  - “Abdominal Pain” → negated=False  
+  - “fatigue” → negated=False  
+
+This demonstrates:
+- Negation is applied locally and independently per mention  
+- Mixed positive/negative symptom states are preserved correctly  
+
+Limitations observed (expected):
+- Negation is strictly pre-scope and linear, missing more complex patterns (e.g., conjunctions, syntax-based negation)
+- Does not capture coordination or complex phrasing 
+
+These limitations are consistent with the intended design and are delegated to the transformer layer.
+
+---
+
+### Overall Assessment
+
+The validation confirms that the system:
+
+- Correctly restricts processing to relevant clinical sections  
+- Reliably extracts symptom mentions using deterministic rules  
+- Maintains accurate character-level span alignment  
+- Applies consistent and interpretable negation logic  
+- Produces structured outputs aligned with downstream requirements  
+
+The observed behaviour matches the intended design:
+
+> High-precision, interpretable candidate generation for downstream refinement
+
+---
+
+### Conclusion
+
+The rule-based symptom extraction module is functioning as intended.
+
+- Outputs are **consistent, explainable, and structurally correct**
+- Limitations (e.g. simplified negation, regex coverage) are **intentional design choices**
+- System is **suitable for integration with transformer-based validation in later stages**
+
+No changes required at this stage.
