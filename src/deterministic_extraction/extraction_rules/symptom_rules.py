@@ -31,7 +31,7 @@ Output:
 Design Constraints:
     - Prioritises precision over recall
     - Uses simple deterministic rules (no deep linguistic parsing)
-    - Delegates contextual interpretation (temporality, uncertainty) to transformer
+    - Delegates contextual interpretation to transformer to validate negation
 """
 
 from typing import List, Dict
