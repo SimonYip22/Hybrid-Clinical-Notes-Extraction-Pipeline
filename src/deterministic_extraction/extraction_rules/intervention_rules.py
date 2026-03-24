@@ -255,3 +255,5 @@ def extract_interventions(note_id: str, subject_id: str, hadm_id: str, icustay_i
                             "task": "intervention_performed"
                         }
                     })
+    
+    return results
