@@ -28,10 +28,14 @@ Output:
 
 Design Principles:
     - Prioritises recall over precision at extraction stage
+    - Intentionally broad regex patterns to over-generate candidates (recall-first strategy)
     - Allows multiple candidates per concept per sentence
     - Does NOT collapse semantically similar mentions
     - Maintains exact span traceability for auditability
     - Delegates all contextual interpretation to transformer layer
+        - Filtering false positives
+        - Determining whether intervention was actually performed
+        - Resolving ambiguity in context and intent
 """
 
 from typing import Dict
