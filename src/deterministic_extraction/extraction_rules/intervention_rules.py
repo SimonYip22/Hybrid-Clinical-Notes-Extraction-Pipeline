@@ -63,11 +63,11 @@ TARGET_INTERVENTION_SECTIONS = {
 INTERVENTION_PATTERNS = {
 
     "AIRWAY_MANAGEMENT": [
-        r"\b(intubated|intubation|reintubated|extubated|endotracheal tube|ett|et tube|tracheostomy|trach(eostomy)?|airway secured)\b"
+        r"\b(intubated|intubation|reintubated|extubated|endotracheal tube(s)?|ett(s)?|et tube(s)?|tracheostomy|trach(eostomy)?|trachy|airway secured)\b"
     ],
 
     "OXYGEN_THERAPY": [
-        r"\b(oxygen therapy|supplemental oxygen|o2 therapy|nasal cannula|nc|non[- ]rebreather|nrb|face mask oxygen|venturi|high[- ]flow oxygen|hfno|hfnc)\b"
+        r"\b(oxygen therapy|supplemental oxygen|o2 therapy|nasal cannula(s)?|nc(s)?|non[- ]rebreather(s)?|nrb(s)?|face mask oxygen|venturi(s)?|high[- ]flow oxygen|hfno|hfnc(s)?)\b"
     ],
 
     "MECHANICAL_VENTILATION": [
@@ -75,7 +75,7 @@ INTERVENTION_PATTERNS = {
     ],
 
     "FLUID_THERAPY": [
-        r"\b(iv fluid(s)?|intravenous fluid(s)?|ivf|fluid bolus|bolus given|crystalloid(s)?|hartmann(')?s|ringer(')?s|normal saline|0\.9% saline|nacl|fluid resus(citation)?|resus fluid(s)?|ns)\b"
+        r"\b(iv fluid(s)?|intravenous fluid(s)?|ivf(s)?|fluid bolus(es)?|bolus given|crystalloid(s)?|hartmann(')?s|ringer(')?s|normal saline|0\.9% saline|nacl|fluid resus(citation)?|resus fluid(s)?|ns)\b"
     ],
 
     "VASOPRESSOR_INOTROPE": [
@@ -91,11 +91,11 @@ INTERVENTION_PATTERNS = {
     ],
 
     "PARALYSIS": [
-        r"\b(rocuronium|atracurium|vecuronium|neuromuscular blockade|nmba|nmb)\b"
+        r"\b(rocuronium|atracurium|vecuronium|neuromuscular blockade|nmba(s)?|nmb(s)?)\b"
     ],
 
     "ANTIBIOTIC_THERAPY": [
-        r"\b(antibiotic(s)?|abx|piperacillin[-/ ]tazobactam|tazocin|meropenem|ceftriaxone|co[- ]amox(iclav)?|augmentin|vancomycin|vanc|gentamicin|doxycycline|metronidazole|flucloxacillin|amoxicillin)\b"
+        r"\b(antibiotic(s)?|abx('s|s)?|piperacillin[-/ ]tazobactam|tazocin|meropenem|ceftriaxone|co[- ]amox(iclav)?|augmentin|vancomycin|vanc|gentamicin|doxycycline|metronidazole|flucloxacillin|amoxicillin)\b"
     ],
 
     "ANTICOAGULATION": [
@@ -103,7 +103,7 @@ INTERVENTION_PATTERNS = {
     ],
 
     "BLOOD_PRODUCT": [
-        r"\b(transfusion|transfused|packed red cells|prbc|prc|ffp|fresh frozen plasma|platelet(s)?|plt|cryo(precipitate)?)\b"
+        r"\b(transfusion(s)?|transfused|packed red cell(s)?|prbc(s)?|prc(s)?|ffp|fresh frozen plasma|platelet(s)?|plt(s)?|cryo(precipitate)?)\b"
     ],
 
     "RENAL_REPLACEMENT_THERAPY": [
@@ -111,11 +111,11 @@ INTERVENTION_PATTERNS = {
     ],
 
     "PROCEDURE_GENERAL": [
-        r"\b(central line|cvc|central venous catheter|art(erial)? line|a[- ]line|chest drain|icc|intercostal catheter|picc|naso gastric tube|ng tube|ngt|foley catheter|urinary catheter)\b"
+        r"\b(central line(s)?|cvc(s)?|central venous catheter(s)?|art(erial)? line(s)?|a[- ]line(s)?|chest drain(s)?|icc(s)?|intercostal catheter(s)?|picc|naso gastric tube(s)?|ng tube(s)?|ngt(s)?|foley catheter(s)?|urinary catheter(s)?)\b"
     ],
 
     "SURGICAL_PROCEDURE": [
-        r"\b(surgical (procedure|intervention)|laparotomy|laparoscopy|laparoscopic|thoracotomy|craniotomy|resection|resected|amputation|amputated|transplant(ed)?)\b"
+        r"\b(surgical (procedure|intervention)|laparotomy|laparoscopy|laparoscopic|thoracotomy|craniotomy|resection(s)?|resected|amputation(s)?|amputated|transplant(ed)?)\b"
     ],
 
     "NUTRITION": [
@@ -123,7 +123,7 @@ INTERVENTION_PATTERNS = {
     ],
 
     "CARDIOVASCULAR_SUPPORT": [
-        r"\b(pacing|pacemaker|cardioversion|dc cv|tvp)\b"
+        r"\b(pacing|pacemaker(s)?|cardioversion|dc cv|tvp)\b"
     ],
 
     "CARDIOVASCULAR_DRUGS": [
