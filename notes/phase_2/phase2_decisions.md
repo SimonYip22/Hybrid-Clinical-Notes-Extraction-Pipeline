@@ -1779,29 +1779,262 @@ Rule-based intervention extraction identifies administered clinical intervention
 
 Intervention extraction is designed as a recall-oriented candidate generation step:
 
-- The objective is to generate plausible intervention candidates, not determine whether an intervention truly occurred
-- All contextual interpretation (e.g. performed vs planned vs historical) is explicitly deferred to the transformer
+- The objective is to generate plausible intervention candidates, not determine whether an intervention truly occurred  
+- All contextual interpretation (e.g. performed vs planned vs historical) is deferred to the transformer  
 
-This differs fundamentally from `SYMPTOM` extraction:
+This differs from SYMPTOM extraction:
 
-- Symptoms aim for controlled, higher-precision signals with negation and light transformer refinement
-- Interventions prioritise broad coverage within a constrained space, accepting false positive with critical reliance on transformer filtering
+- Symptoms prioritise higher precision with rule-based refinement (e.g. negation)  
+- Interventions prioritise coverage within a constrained clinical space  
 
 Rationale:
 
 - ICU intervention language is highly variable, often implicit, and frequently lacks explicit action verbs  
-- Attempting to encode “truth” (e.g. performed vs planned) in rules would require complex, brittle heuristics, with poor generalisation to unseen phrasing
-- Therefore rules are broad but constrained, and precision is enforced downstream
+- Encoding “truth” (performed vs planned) in rules would require complex, brittle heuristics with poor generalisation  
 
 Implications:
 
 - Lower precision at extraction stage (by design)  
-- Higher reliance on downstream validation  
+- Greater reliance on downstream validation  
 - Reduced rule complexity and improved robustness  
 
 ---
 
+**B. Section scope**
 
+Extraction is restricted to:
+
+- `assessment`  
+- `assessment and plan`  
+- `action`  
+
+These sections were selected due to high intervention density, but differ in semantics:
+
+- **Action** → predominantly performed interventions  
+- **Assessment / Assessment and Plan** → mixed content:
+  - Current state (“intubated”)  
+  - Planned interventions  
+  - Historical context  
+
+Rationale:
+
+- Provides strong contextual constraint without requiring semantic interpretation  
+- Excluding other sections reduces noise  
+- Restricting further (e.g. action only) would significantly reduce recall  
+
+---
+
+**C. Concept-based design**
+
+Interventions are modelled as clinical action categories rather than individual entities.
+
+- One concept → many heterogeneous lexical forms  
+- Concepts represent clinically meaningful intervention classes  
+
+A total of 19 ICU-focused concepts were defined based on:
+
+- Clinical relevance  
+- Frequency in ICU documentation  
+- Utility for downstream aggregation  
+
+Examples:
+
+- `SEDATION` → “propofol”, “sedated”, “sedation”  
+- `BLOOD_PRODUCT` → “PRBC”, “FFP”, “transfused”  
+- `AIRWAY_MANAGEMENT` → “intubated”, “ETT”, “extubated”  
+
+Design principle:
+
+- Each concept corresponds to a category that would appear as a distinct clinical action in practice  
+
+Not chosen:
+
+- Drug-level granularity → too sparse and fragmented  
+- Overly broad categories → not clinically meaningful 
+
+---
+
+**D. Lexical pattern design (high-variability mapping)**
+
+Intervention patterns reflect high linguistic variability rather than simple synonym mapping.
+
+Interventions appear as:
+
+- Abbreviations (“NC”, “NGT”, “IVF”)  
+- Verbs (“intubated”)  
+- Nouns (“central line”)  
+- Phrases ("bolus given")
+
+Therefore:
+
+- Many distinct expressions map to a single concept  
+- Patterns include:
+  - Explicit clinical terms  
+  - ICU shorthand and acronyms  
+  - Common variants and plural forms  
+
+Rationale:
+
+- ICU documentation is inconsistent and heavily abbreviated  
+- Restrictive patterns would significantly reduce recall  
+
+---
+
+**E. No trigger-word dependency**
+
+Extraction does not rely on trigger words (e.g. “given”, “administered”, “performed”).
+
+Rationale:
+
+- Many valid interventions occur without triggers (“on propofol”, “intubated”)  
+- Introducing trigger logic creates:
+  - Complex and brittle regex patterns  
+  - Ambiguity in pattern structure (noun vs verb forms)  
+- Section semantics are inconsistent, especially outside “action”  
+
+Conclusion:
+
+- Trigger-based rules would increase precision but severely reduce recall  
+- Complexity increase is not justified  
+
+---
+
+**F. No semantic filtering or negation handling**
+
+No attempt is made to determine:
+
+- Whether an intervention was actually performed  
+- Whether it is negated, planned, or historical  
+
+Rationale:
+
+- These require semantic and temporal reasoning beyond rule-based systems  
+- Implementing this in rules would require scope modelling, token alignment, and complex heuristics
+
+This is intentionally avoided:
+
+- Keeps pipeline simple and interpretable  
+- Avoids brittle logic  
+- Delegates all interpretation to transformer  
+
+---
+
+**G. Sentence-level processing and span alignment**
+
+Same as with SYMPTOM extraction, INTERVENTION extraction is performed at the sentence level:
+
+- Sections are split into sentences  
+- Regex patterns are applied per sentence  
+
+For each match:
+
+- Character offsets are calculated relative to the full section  
+- Exact span text is extracted  
+
+This ensures:
+
+- Precise traceability to source text  
+- Compatibility with downstream validation  
+- Full auditability of each extraction  
+
+---
+
+**H. Deduplication strategy (exact span only)**
+
+Only exact duplicate spans are removed:
+
+- Deduplication only for matches of the same start index, end index, and concept  
+- No deduplication is performed per concept per sentence 
+
+Interventions differ fundamentally from symptoms:
+
+- Symptoms are descriptive states → repetition rarely adds value  
+- Interventions are concrete actions/entities → multiple mentions are meaningful  
+- Example:
+  - Multiple mentions of the same concept: “on propofol, fentanyl, and midazolam”
+  - Collapsing would lose information, distort counts, and reduce downstream utility  
+
+Therefore:
+
+- All mentions are retained, even if they map to the same concept, as long as they are distinct spans
+- This ensures deterministic outputs, full signal retention, with no premature semantic decisions 
+
+---
+
+**I. Controlled candidate space (high-recall but bounded)**
+
+Although extraction is recall-oriented, it is not unconstrained.
+
+Candidate generation is limited by:
+
+1. Section filtering  
+2. Concept-based pattern matching  
+3. ICU-specific vocabulary  
+
+This creates moderate-constraint candidate generation:
+
+- Broad extraction within a clinically meaningful space
+- Avoidance of arbitrary or irrelevant matches  
+
+---
+
+**J. Handling ambiguity (by design)**
+
+The system intentionally allows ambiguity:
+
+- Performed vs planned vs historical  
+- Explicit vs implicit interventions  
+
+This is acceptable because:
+
+- Ambiguity is resolved in downstream transformer validation  
+- Attempting to resolve it in rules would:
+  - Increase complexity  
+  - Reduce recall  
+  - Introduce brittle heuristics  
+
+---
+
+**K. Design trade-offs**
+
+The intervention extraction component makes the following explicit trade-offs:
+
+**Advantages:**
+
+- High recall of intervention mentions  
+- Simple, interpretable rule set  
+- Fully traceable outputs  
+- Robust to variation in clinical language  
+
+**Limitations:**
+
+- Lower precision at extraction stage  
+- No contextual understanding  
+- Potential over-generation of candidates  
+
+These are intentional and acceptable because:
+
+- The system is designed as a **two-stage pipeline**  
+- Precision is enforced **after extraction**, not during  
+
+---
+
+**Overall design rationale**
+
+The intervention extraction system is deliberately designed to:
+
+- Maximise **coverage of clinically relevant intervention mentions**  
+- Avoid encoding complex linguistic or semantic rules  
+- Maintain **simplicity, determinism, and auditability**  
+- Produce structured, span-aligned candidates for downstream validation  
+
+It differs from SYMPTOM extraction in that:
+
+- It prioritises **recall over precision**  
+- It handles **higher linguistic variability**  
+- It preserves **all mentions rather than collapsing concepts**  
+
+The result is a robust, scalable candidate generator aligned with modern NLP pipeline design.
 
 ---
 
