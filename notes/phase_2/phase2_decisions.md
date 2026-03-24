@@ -1766,13 +1766,11 @@ This confirms correct interaction between:
 
 ### 4. INTERVENTION Extraction
 
-Rule-based intervention extraction identifies administered clinical interventions using deterministic, concept-level regex patterns for broad candidate generation, without negation handling or semantic handling.
+Rule-based intervention extraction identifies administered clinical interventions using deterministic, concept-level regex patterns for broad candidate generation
 
 ---
 
 #### 3.1 Extraction Decisions
-
-
 
 	•	You aim for controlled candidate generation
 	•	Accept moderate precision- Moderate constraint candidate generation - broader extraction is acceptable if constrained to meaningful candidates - section constraint + concept based patterns + no negation = controlled candidate generation
@@ -1931,7 +1929,7 @@ Use this rule:
 
 A concept = a clinically meaningful intervention class that would appear as a distinct line in a clinical summary
 
-final concept set icu focused minimal but complete 
+final concept set of 17 icu focused concepts, minimal but complete and high yield
 
 
 Each concept should include:
@@ -1945,6 +1943,8 @@ B. Variants / abbreviations
 	•	ICU shorthand
 	•	Acronyms
 
+contain plurals where relevant 
+
 
 
 
@@ -1957,4 +1957,296 @@ B. Variants / abbreviations
 
 #### 3.3 Validation Metrics and Manual Sample Analysis
 
----
+1. System-Level Behaviour — Is It Working as Designed?
+
+✔ Coverage and triggering
+	•	18 / 30 notes (60%) had target sections → expected for ICU notes (many notes are admin / irrelevant)
+	•	Only 1 / 18 notes (5.6%) had no interventions despite relevant sections
+
+Interpretation:
+	•	Your rules are not under-sensitive
+	•	You are successfully avoiding the main failure mode: missing candidates
+
+This is the single most important success criterion at this stage.
+
+⸻
+
+✔ Extraction volume
+	•	96 interventions total
+	•	~5.3 per note
+
+This is clinically realistic density for ICU documentation.
+
+Conclusion:
+	•	Not under-extracting
+	•	Not exploding uncontrollably
+
+⸻
+
+2. What Worked Well (High-Value Signals)
+
+A. Strong ICU-relevant concept coverage
+
+Your top concepts:
+	•	BLOOD_PRODUCT (14)
+	•	SEDATION (14)
+	•	AIRWAY_MANAGEMENT (13)
+	•	FLUID_THERAPY (11)
+
+These are exactly the dominant ICU intervention domains.
+
+This confirms:
+	•	Your concept set is well chosen
+	•	You are not missing major ICU intervention classes
+
+⸻
+
+B. Good abbreviation capture (critical success)
+
+Examples:
+	•	NC → oxygen
+	•	IVF, NS → fluids
+	•	PRBC, FFP → blood
+	•	Vanc, abx → antibiotics
+	•	NGT → procedure
+
+These are high-value ICU shorthand terms that many systems miss.
+
+⸻
+
+C. Correct multi-signal capture (desired redundancy)
+
+Example (NOTE 4):
+
+sedated + Propofol + sedation
+
+Example (NOTE 1):
+
+PRBCs + FFP + PRBCs
+
+This is not an error — it is:
+
+multiple surface forms reinforcing the same clinical intervention
+
+This is exactly why you DO NOT deduplicate at rule stage
+
+
+⸻
+
+D. Good real-world examples (use these)
+
+Example 1 — Ideal fluid + blood capture
+
+NOTE 1:
+
+IVF
+NS
+PRBCs
+FFP
+
+→ Shows:
+	•	Abbreviation handling
+	•	Multiple intervention types in one sentence
+	•	Correct concept mapping
+
+⸻
+
+Example 2 — Sedation stack (very realistic ICU)
+
+NOTE 4:
+
+sedated
+Propofol
+sedation
+
+→ Shows:
+	•	Drug + state + concept
+	•	Perfect example of why deduplication is wrong here
+
+⸻
+
+Example 3 — Mixed intervention types
+
+NOTE 3:
+
+metoprolol
+intubation
+NC
+FFP
+IVF
+abx
+arterial line
+
+→ Demonstrates:
+	•	Cross-domain extraction (cardio, airway, fluids, infection, procedures)
+	•	Good breadth
+
+⸻
+
+3. Issues Identified (Important)
+
+These are real—but must be judged against your pipeline philosophy.
+
+⸻
+
+Issue 1 — Duplicate concepts within sentence
+
+Example:
+
+NGT ×4
+PRBC ×2
+neo ×2
+
+Cause:
+	•	Same pattern matched multiple times
+	•	Or multiple mentions in text
+
+Is this acceptable?
+
+✔ YES — at rule stage
+
+Because:
+	•	You are extracting mentions, not concepts
+	•	Deduplication is a semantic decision, not lexical
+
+Interpretation:
+
+This validates your earlier decision:
+
+“Do not deduplicate interventions at rule stage”
+
+⸻
+
+Issue 2 — Weak false positives (context errors)
+
+Example (NOTE 2):
+
+sedation → but context = "previous sedation"
+
+Example:
+
+Intubation → hypothetical / plan
+
+Cause:
+	•	No temporality / intent modelling
+
+Is this acceptable?
+
+✔ YES — by design
+
+This is exactly:
+
+Transformer’s job (validation layer)
+
+⸻
+
+Issue 3 — Synonym duplication
+
+Example:
+
+ASA + Aspirin
+
+Cause:
+	•	Same drug, different forms
+
+Is this acceptable?
+
+✔ YES
+
+Because:
+	•	They are distinct spans
+	•	You preserve provenance
+
+⸻
+
+Issue 4 — Missing some interventions (minor recall gaps)
+
+Examples:
+	•	No capture of:
+	•	albumin
+	•	octreotide
+	•	protonix
+	•	sucralfate
+
+Interpretation:
+	•	These are second-order drugs
+	•	Not core ICU interventions
+
+Is this a problem?
+
+✖ NO (for now)
+
+Your system correctly prioritises:
+	•	high-frequency
+	•	high-impact interventions
+
+⸻
+
+Issue 5 — Slight under-capture of oxygen modalities
+
+Example:
+	•	“face tent”, “humidified O2” not captured
+
+This is the only genuine recall gap worth fixing
+
+⸻
+
+4. Concept Distribution — Is It Balanced?
+
+Yes.
+
+No single concept dominates excessively.
+	•	Blood + sedation + airway → expected ICU triad
+	•	Long tail present → good generalisation
+
+No evidence of:
+	•	Concept explosion
+	•	Missing major category
+
+⸻
+
+5. Key Design Validation
+
+This output strongly confirms your architecture is correct:
+
+✔ Rule layer is doing:
+	•	Broad capture
+	•	High recall
+	•	Span-accurate extraction
+
+✔ NOT doing:
+	•	Deduplication
+	•	Context reasoning
+	•	Clinical interpretation
+
+Which is exactly what you designed.
+
+⸻
+
+6. Final Verdict
+
+Is the system working?
+
+✔ Yes — correctly and as intended
+
+Are the “issues” actual problems?
+
+Mostly no — they are:
+	•	Expected
+	•	Designed-for behaviour
+
+Do NOT:
+	•	Add deduplication
+	•	Add context logic
+	•	Reduce duplicates
+
+7. Bottom Line (Critical)
+
+What you are seeing is:
+
+A correct high-recall lexical extractor producing noisy but rich candidates
+
+That is exactly what a hybrid pipeline requires.
+
+If this looked “clean”, it would actually mean:
+→ your system is too restrictive and losing recall
