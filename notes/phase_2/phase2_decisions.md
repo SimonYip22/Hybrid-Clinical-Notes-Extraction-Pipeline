@@ -1921,6 +1921,34 @@ Why this is the correct stopping point
 	•	Aligns with your architecture → no contradiction
 	•	Avoids overengineering → no complex dedup logic
 	•	Keeps system debuggable → every output explainable
+
+
+Concepts should represent clinical action categories, not:
+	•	individual drugs (too granular)
+	•	overly broad groups like “treatment” (too vague)
+
+Use this rule:
+
+A concept = a clinically meaningful intervention class that would appear as a distinct line in a clinical summary
+
+final concept set icu focused minimal but complete 
+
+
+Each concept should include:
+
+A. Explicit terms (high precision)
+	•	Exact procedure names
+	•	Drug names
+	•	Devices
+
+B. Variants / abbreviations
+	•	ICU shorthand
+	•	Acronyms
+
+
+
+
+
 ---
 
 #### 3.2 Workflow Implementation
