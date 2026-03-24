@@ -155,11 +155,19 @@ def extract_interventions(note_id: str, subject_id: str, hadm_id: str, icustay_i
             Raw section text to process
 
     Processing Steps:
-        1. Section filtering: Only process sections likely to contain intervention information
-        2. Sentence segmentation: Split section text into sentences for more precise pattern matching
-        3. Pattern matching: For each sentence, apply regex patterns for each intervention concept
-        4. Span extraction: For each match, extract the exact text span and character offsets
-        5. Result structuring: Compile results into a structured format with metadata and placeholders
+        1. Section filtering: 
+            Only process sections likely to contain intervention information
+        2. Sentence segmentation: 
+            Split section text into sentences for more precise pattern matching
+        3. Pattern matching: 
+            For each sentence, apply regex patterns for each intervention concept
+        4. Span extraction: 
+            For each match, extract the exact text span and character offsets
+        5. Deduplication:
+            Only exact duplicate spans (same start, end, concept) are removed
+            No concept-level or semantic deduplication is performed
+        6. Result structuring: 
+            Compile results into a structured format with metadata and placeholders
 
     Output:
         List[Dict]:
@@ -207,6 +215,7 @@ def extract_interventions(note_id: str, subject_id: str, hadm_id: str, icustay_i
                     start_idx = sent_start + match.start()
                     end_idx = sent_start + match.end()
 
+                    # 5. Deduplication
                     # Avoid duplicate spans (same start, same end, same concept) within the same sentence
                     span_key = (start_idx, end_idx, concept)
                     if span_key in seen_spans:
@@ -218,7 +227,7 @@ def extract_interventions(note_id: str, subject_id: str, hadm_id: str, icustay_i
                     # Extract the exact text span from the original sentence text using the character offsets
                     span_text = text[start_idx:end_idx]
 
-                    # 5. Result structuring
+                    # 6. Result structuring
                     results.append({
                         "note_id": note_id,
                         "subject_id": subject_id,
