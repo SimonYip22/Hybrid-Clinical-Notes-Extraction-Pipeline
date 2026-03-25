@@ -66,7 +66,7 @@ from deterministic_extraction.extraction_rules.clinical_condition_rules import (
 
 CORPUS_PATH = "data/processed/icu_corpus.csv"
 TEXT_COLUMN = "TEXT"
-SAMPLE_SIZE = 30
+SAMPLE_SIZE = 200
 RANDOM_SEED = 42
 
 df = pd.read_csv(CORPUS_PATH)
