@@ -78,7 +78,7 @@ NEGATION_BREAKS = {"but", "however", "although"}
 # Concept-level symptom candidates mapped to synonym regex patterns for detection
 SYMPTOM_PATTERNS = {
     "pain": [
-        r"\b(chest pain|abdominal pain|abd pain|abdo pain|back pain|neck pain|pain)\b",
+        r"\b(chest pain|abdominal pain|abd(o)? pain|back pain|neck pain|pain)\b",
     ],
     "headache": [
         r"\b(headache|head pain)\b"
@@ -87,43 +87,43 @@ SYMPTOM_PATTERNS = {
         r"\b(chest tightness|chest discomfort)\b"
     ],
     "palpitations": [
-        r"\b(palpitations|heart racing)\b"
+        r"\b(palpitation(s)?|heart racing)\b"
     ],
     "dyspnoea": [
-        r"\b(shortness of breath|short of breath|sob|dyspnea|dyspnoea|breathlessness|difficulty breathing)\b"
+        r"\b(short(ness)? of breath|sob|dyspn(o)?ea|breathless(ness)?|diff(iculty)? breath(ing|e)?)\b"
     ],
     "syncope": [
-        r"\b(syncope|fainting|fainted|passing out|passed out|syncopal episode|loss of consciousness|loc)\b"
+        r"\b(syncop(e|al)|faint(ing|ed|s)?|pass(ing|ed)? out|loss of consc(iousness)?|loc)\b"
     ],
     "nausea_vomiting": [
-        r"\b(nausea and vomiting|nausea|nauseated|vomiting|vomit|vomited|hematemesis|retching|emesis|n/v|n\+v)\b"
+        r"\b(nausea and vomiting|nausea(ted)?|vomit(ed|ing)?|h(a)?ematemesis|retch(ing|es)?|emesis|n/v|n\+v)\b"
     ],
     "fatigue": [
-        r"\b(fatigue|fatigued|tired|tiredness|lethargy|lethargic)\b"
+        r"\b(fatigue(d)?|tired(ness)?|letharg(ic|y))\b"
     ],
     "dizziness": [
-        r"\b(dizziness|lightheadedness|lightheaded|dizzy)\b"
+        r"\b(dizz(y|iness)|lightheaded(ness)?)\b"
     ],
     "fever": [
-        r"\b(fever|febrile|pyrexia|high temperature|spiking temperature|feverish|fevered|rigors|chills)\b"
+        r"\b(fever(ed|ish|s)?|febrile|pyrexia|(high|raised) temp(erature)?|spik(ing|ed) temp(erature)?|rigors|chills)\b"
     ],
     "cough": [
-        r"\b(productive cough|dry cough|wet cough|coughing|nonproductive cough|non-productive cough|cough)\b"
+        r"\b((productive|dry|wet) cough|coughing|non[- ]productive cough|cough)\b"
     ],
     "diarrhoea": [
-        r"\b(diarrhea|diarrhoea|loose stools|loose stool|watery stools|frequent stools)\b"
+        r"\b(diarrh(o)?ea|(loose|watery|frequent) stool(s)?)\b"
     ],
     "confusion": [
-        r"\b(confusion|confused|altered mental state|altered mental status|altered consciousness|disorientation|disoriented|ams|acute confusional state|acute confusional episode|delirium|delirious)\b"
+        r"\b(confus(ion|ed)|altered mental (state|status)|altered consciousness|disorientat(ion|ed)|ams|acute confusional (state|ep(isode)?)|delirium|delirious)\b"
     ],
     "bleeding": [
-        r"\b(hematochezia|melena|epistaxis|hemoptysis|haemoptysis)\b"
+        r"\b(h(a)?ematochezia|melena|epistaxis|h(a)?emoptysis)\b"
     ],
     "weakness": [
         r"\b(generalised weakness|weakness)\b"
     ],
     "seizure": [
-        r"\b(epileptic seizure|seizure|seizures|seizing|convulsion|convulsions|seizure-like activity|szr)\b"
+        r"\b(epileptic seizure|seizure(s)?|seiz(ing|ed)|convulsion(s)?|seizure[- ]like activity|szr('s|s)?)\b"
     ],
     "anorexia": [
         r"\b(anorexia|loss of appetite|decreased appetite|poor appetite|poor intake)\b"
