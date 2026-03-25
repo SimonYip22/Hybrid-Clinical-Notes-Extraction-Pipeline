@@ -2316,6 +2316,59 @@ Rule-based complication extraction identifies documented adverse events and comp
 
 #### 5.1 Extraction Decisions
 
+The COMPLICATION extraction layer is a recall-first, context-agnostic lexical detector of pathological states. It deliberately over-generates candidates using broad regex pattern matching (re.finditer), avoids deduplication, and defers all semantic interpretation to the downstream transformer.
+
+The COMPLICATION entity is intentionally designed as the broadest and most permissive extraction layer, prioritising maximal recall of clinically relevant pathological states. Unlike INTERVENTION or SYMPTOM, this entity captures disease-level concepts, which inherently require contextual interpretation (temporality, certainty, attribution) that cannot be reliably handled with deterministic rules.
+
+No Context Filtering (Deliberate limitation)
+
+The rule-based layer does not attempt to determine:
+	•	Temporality (past vs current)
+	•	Certainty (confirmed vs suspected vs ruled out)
+	•	Negation
+	•	Hypothetical or planned diagnoses
+
+Result:
+The extractor will include:
+	•	Differential diagnoses
+	•	Historical conditions
+	•	Negated conditions
+	•	Planned or hypothetical complications
+
+Rationale:
+	•	These distinctions require semantic understanding
+	•	Delegated entirely to the transformer validation layer
+
+Deduplication Policy
+
+No deduplication at rule stage
+	•	Multiple mentions of the same concept are preserved:
+	•	Across sentences
+	•	Within the same sentence
+	•	Across different lexical forms
+
+Examples:
+	•	“sepsis… septic shock… infection” → all retained
+	•	“AKI… renal failure” → both retained
+
+Rationale:
+	•	Each span represents a distinct clinical signal
+	•	Deduplication requires semantic judgment (handled downstream)
+
+
+
+	•	umbrella terms (“infection”, “bleeding”)
+	•	syndromes (“respiratory failure”)
+
+do not:
+	1.	Try to be ontologically complete
+	2.	Add synonym variants manually
+	3.	Mix:
+	•	diseases
+	•	symptoms
+	•	findings
+	•	lab abnormalities
+
 ---
 
 #### 5.2 Workflow Implementation
