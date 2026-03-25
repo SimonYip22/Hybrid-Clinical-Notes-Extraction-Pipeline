@@ -135,7 +135,7 @@ INTERVENTION_PATTERNS = {
     ],
 
     "RESUSCITATION": [
-        r"\b(cpr|cardiopulmonary resuscitation|resuscitation|resus|als|advanced life support|bls|basic life support|rosc|return of spontaneous circulation|defibrillation|defib|defibrillated|cardiac arrest|ventricular fibrillation|vf)\b"
+        r"\b(cpr|cardiopulmonary resuscitation|resuscitation|resus|als|advanced life support|bls|basic life support|rosc|return of spontaneous circulation|defibrillation|defib|defibrillated)\b"
     ]
 }
 
