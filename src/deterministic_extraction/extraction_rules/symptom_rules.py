@@ -117,7 +117,7 @@ SYMPTOM_PATTERNS = {
         r"\b(confusion|confused|altered mental state|altered mental status|altered consciousness|disorientation|disoriented|ams|acute confusional state|acute confusional episode|delirium|delirious)\b"
     ],
     "bleeding": [
-        r"\b(bleed|bleeding|hematochezia|melena|epistaxis|hemoptysis|haemoptysis)\b"
+        r"\b(hematochezia|melena|epistaxis|hemoptysis|haemoptysis)\b"
     ],
     "weakness": [
         r"\b(generalised weakness|weakness)\b"
