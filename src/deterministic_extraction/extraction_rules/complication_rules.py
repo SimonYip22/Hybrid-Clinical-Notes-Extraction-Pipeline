@@ -52,6 +52,8 @@ from deterministic_extraction.sentence_segmentation import split_into_sentences
 TARGET_COMPLICATION_SECTIONS = {
     "assessment and plan",
     "assessment",
+    "hpi",
+    "chief complaint",
 }
 
 # ------------------------------------------------------------
@@ -62,63 +64,47 @@ TARGET_COMPLICATION_SECTIONS = {
 COMPLICATION_PATTERNS = {
 
     "infection": [
-        r"\b(sep(sis|tic)|infect(ed|ion)|bacter(a)?emia|pneumonia(s)?|pneumonitis|urinary tract infection|uti|(endo|myo|peri)carditis|gastroenteritis|hepatitis|urethritis|meningitis|vaginitis)\b"
+        r"\b(sep(sis|tic)|infect(ed|ion)|bacter(a)?emia|pneumonia(s)?|urinary tract infection|uti|(endo|myo|peri)carditis|meningitis)\b"
+    ],
+    "shock": [
+        r"\b((septic|cardiogenic|hypovol(a)?emic|distributive|hypotensive|neurogenic) shock|anaphyla(xis|ctic))\b"
+    ],
+    "respiratory_failure": [
+        r"\b(resp(iratory)? failure|acute respiratory distress syndrome|ards|hypox(a)?emi(a|c)|hypercapni(a|c))\b"
+    ],
+    "cardiovascular": [
+        r"\b(myocardial infarct(ion)?|mi|acute coronary syndrome|acs|unstable angina|ua|heart failure|hf|acute ventricular failure|avf|hypertensive crisis|cardiomyopathy)\b"
+    ],
+    "arrhythmia": [
+        r"\b(arrhythmia(s)?|a(trial)? fib(rillation)?|af|v(entricular)? tachy(cardia)?|vtach|vt|supraventricular tachycardia|svt|a(trial)? tachy(cardia)?)\b"
+    ],
+    "renal_failure": [
+        r"\b(renal failure|acute kidney injury|aki)\b"
+    ],
+    "neurological": [
+        r"\b(stroke|cerebrovascular accident|cva|transient ischemic attack|tia|seizure(s)?|epilep(sy|tic)|status epilepticus|encephalopath(y|ic))\b"
     ],
     "bleeding": [
         r"\b(h(a)?emorrhag(e|es|ing)|bleed(s|ing)?|h(a)?ematoma|sah)\b"
     ],
-    "respiratory failure": [
-        r"\b(respiratory failure|rf|acute respiratory distress syndrome|ards|hypox(a)?emi(a|c)|hypercapni(a|c))\b"
+    "gastrointestinal": [
+        r"\b((bowel|intestinal|gastrointestinal|gastric|gi|colon(ic)?) (perforat(ion|ed)|obstruct(ion|ed)|isch(a)?emia|infarct(ion)?|ulcer(ated|ation)?)|sbo)\b"
     ],
-    "renal failure": [
-        r"\b(renal failure|acute kidney injury|aki)\b"
+    "metabolic": [
+        r"\b(diabetic ketoacidosis|dka|(hypo|hyper)glyc(a)?emi(a|c)|hypo(s)?|(hypo|hyper)natr(a)?emi(a|c)|(hypo|hyper)kal(a)?emi(a|c)|(hypo|hyper)calc(a)?emi(a|c))\b"
     ],
-    "liver failure": [
-        r"\b((liver|hepatic) failure|acute liver injury|ali|alf)\b"
+    "hepatic_failure": [
+        r"\b((hepatic|liver) failure|acute liver (injury|failure)|alf|ali)\b"
     ],
-    "cardiac arrest": [
-        r"\b((cardiac|heart|sinus) arrest|asystole|ventricular fibrillation|vf(ib)?|pulseless v(entricular)? tachy(cardia)?| pulseless vt)\b"
+    "cardiac_arrest": [
+        r"\b((cardiac|heart|sinus) arrest|asystole|ventricular fibrillation|vf(ib)?|pulseless v(entricular)? tachy(cardia)?|pulseless vt)\b"
     ],
-    "shock": [
-        r"\b((septic|cardiogenic|hypovol(a)?emic|distributive|hypotensive|neurogenic) shock|toxic shock syndrome|tss|anaphyla(xis|ctic))\b"
-    ],
-    "cardiovascular": [
-        r"\b(myocardial infarct(ion)?|mi|acute coronary syndrome|acs|unstable angina|ua|heart failure|hf|acute venticular failure|avf|hypertensive crisis)\b"
-    ],
-    "arrythmia": [
-        r"\b(arrhythmia(s)?|a(trial)? fib(rillation)?|af|v(entricular)? tachy(cardia)?|vtach|vt|supraventricular tachycardia|svt|av (nodal)? re[- ]entrant tachycardia|avnrt|avrt|a(trial)? tachy(cardia)?)\b"
-    ],
-    "neurological": [
-        r"\b(stroke|cerebrovascular accident|cva|transient ischemic attack|tia|seizure(s)?|epilep(sy|tic)|status epilepticus|encephalopath(y|ic)|neuropathy|migrain(e|ous))\b"
-    ],
-    "gi": [
-        r"\b((bowel|intestinal|gastrointestinal|gastric|gi) (perforation|obstruction|isch(a)?emia|infarct(ion)?|ulcer)|ascites|gallstone(s)|)\b"
-    ],
-    "malignancy": [
-        r"\b(malignan(t|cy)|cancer(s)?|(adeno)?carcinoma(s)?|sarcoma(s)?|neoplas(m(s)?|tic)|tumo(u)?r(s)?|leuk(a)?emia(s)?|lymphoma(s)?|myeloma(s)?|metastas(is|es)|metastatic|melanoma(s))\b"
-    ],
-    "critical illness": [
-        r"\b(critical illness|critically ill|multi[- ]organ failure|mof|multiple organ dysfunction syndrome|mods|multi-organ dysfunction syndrome|mords)\b"
-    ],
-    "endocrine": [
-        r"\b(diabetes|t1dm|t2dm|diabetic ketoacidosis|dka|thyroid storm|myxedema coma|addisonian crisis|(hypo|hyper)glyc(a)?emi(a|c)|hypo(s)?|(hypo|hyper)(natr(a)?emi(a|c)|(hypo|hyper)(kal(a)?emi(a|c)|(hypo|hyper)(calc(a)?emi(a|c))\b"
+    "respiratory_complication": [
+        r"\b(pneumothorax|h(a)?emothorax|pleural effusion|pulmonary (o)?edema|aspiration pneumonitis)\b"
     ],
     "vascular": [
-        r"\b(peripheral (vascular|arterial) disease|pvd|pad|(critical|acute) limb isch(a)?emia|aortic dissection|aortic (aneurysm|rupture)|aaa|(arterial|venous|neuropathic) ulcer(s|ation)?|deep vein thrombosis|dvt|pulmonary embol(ism|us)|pe|vte)\b"
+        r"\b(aortic dissection|aortic (aneurysm|rupture)|aaa|deep vein thrombosis|dvt|pulmonary embol(ism|us)|pe|thromboembolism|vte)\b"
     ],
-    "valve_disease": [
-        r"\b(valve disease|valvulopathy|(aortic|pulmonary|tricuspid|mitral) (stenosis|regurg(itation)?)|)\b"
-    ],
-    "obstetric": [
-        r"\b(eclampsia|pre[- ]eclampsia|placenta(l)? (abruptio(n)?|previa)|pph|amniotic fluid embolism|afem)\b"
-    ],
-    "respiratory": [
-        r"\b(pleural effusion|pneumothorax|h(a)?emothorax|pulmonary (o)?edema|aspiration pneumonitis)\b"
-    ],
-    "urology_nephrology": [
-        r"\b((kidney|renal|urinary tract) stone(s)?)\b"
-    ],
-
 }
 
 # ------------------------------------------------------------
