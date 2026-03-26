@@ -4,7 +4,8 @@ validate_clinical_condition_rules.py
 Purpose:
     Evaluate the behaviour of the rule-based CLINICAL_CONDITION extraction pipeline
     on a sample of ICU clinical notes. This script analyses candidate generation
-    characteristics including coverage, redundancy, and concept distribution.
+    characteristics including coverage, redundancy, concept distribution, and
+    targeted inspection of short-form abbreviations.
 
 Usage:
     export PYTHONPATH=$(pwd)/src
@@ -26,19 +27,25 @@ Workflow:
         - Total clinical_condition candidates extracted
         - Concept frequency distribution
         - Occurrence of multiple matches per concept per sentence
-    7. Print outputs per note:
+    7. Abbreviation inspection (targeted debugging):
+        - Identify short-form abbreviations (e.g. AF, VF, MI, HF)
+        - Capture their sentence-level context for manual review
+        - Aggregate frequency of abbreviation occurrences
+    8. Print outputs per note:
         - Sections (truncated)
         - Extracted clinical_condition entities with concept and section
-    8. Summarise:
+    9. Summarise:
         - Section coverage
         - Extraction performance (total, average per note)
         - Top clinical_condition concepts
         - Redundancy patterns (multiple matches per concept per sentence)
+        - Abbreviation frequency summary (for debugging analysis)
 
 Design Focus:
     - Evaluates recall-oriented candidate generation behaviour
     - Inspects redundancy arising from minimal deduplication policy
     - Identifies over- or under-represented concepts
+    - Enables targeted validation of ambiguous abbreviations via context inspection
     - Does NOT evaluate:
         - Contextual correctness (handled by transformer)
         - Negation
@@ -48,6 +55,7 @@ Key Interpretation:
     - High extraction volume is expected (recall-first design)
     - Multiple mentions of the same concept in a sentence are valid outputs
     - Redundancy analysis helps assess whether rule patterns are too broad
+    - Abbreviation debugging supports evidence-based refinement of regex patterns
 """
 
 import pandas as pd
@@ -66,7 +74,7 @@ from deterministic_extraction.extraction_rules.clinical_condition_rules import (
 
 CORPUS_PATH = "data/processed/icu_corpus.csv"
 TEXT_COLUMN = "TEXT"
-SAMPLE_SIZE = 200
+SAMPLE_SIZE = 30
 RANDOM_SEED = 42
 
 df = pd.read_csv(CORPUS_PATH)
@@ -74,6 +82,10 @@ notes = df.to_dict(orient="records")
 
 random.seed(RANDOM_SEED)
 sample = random.sample(notes, SAMPLE_SIZE)
+
+DEBUG_ABBREVIATIONS = False
+
+ABBREVIATIONS_TO_CHECK = {"af", "vf", "mi", "hf"}  # removed vt, ua
 
 # ---------------------------------------------------------------------
 # TRACKERS
@@ -92,6 +104,9 @@ concept_counter = Counter()
 
 # Global redundancy tracker
 global_duplicate_concepts = []
+
+# Abbreviation debug tracker
+abbreviation_hits = []
 
 # ---------------------------------------------------------------------
 # VALIDATION LOOP
@@ -163,6 +178,19 @@ for i, note in enumerate(sample):
     for e in extracted:
         concept_counter.update([e["concept"]])
         total_clinical_conditions += 1
+
+        # -----------------------------
+        # ABBREVIATION DEBUG (ADD HERE)
+        # -----------------------------
+        entity_text = e["entity_text"]
+
+        if entity_text.lower() in ABBREVIATIONS_TO_CHECK:
+            abbreviation_hits.append({
+                "entity": entity_text,
+                "concept": e["concept"],
+                "section": e["section"],
+                "sentence": e["sentence_text"]
+            })
 
     # Redundancy analysis (per note)
     concept_per_sentence = defaultdict(list)
@@ -246,3 +274,27 @@ if global_duplicate_concepts:
             print(f"[{concept}] → {ents}")
 else:
     print("\nNo multiple-match redundancy detected.")
+
+# ----------------------------------------------------------
+# ABBREVIATION DEBUG SUMMARY
+# ----------------------------------------------------------
+
+if DEBUG_ABBREVIATIONS:
+    print("\n" + "=" * 80)
+    print("ABBREVIATION DEBUG")
+    print("=" * 80)
+
+    for hit in abbreviation_hits:
+        print(f'\nEntity: {hit["entity"]}')
+        print(f'Concept: {hit["concept"]}')
+        print(f'Section: {hit["section"]}')
+        print(f'Sentence: {hit["sentence"]}')
+
+    if not abbreviation_hits:
+        print("No abbreviation matches found.")
+
+abbr_counter = Counter([h["entity"].lower() for h in abbreviation_hits])
+
+print("\nABBREVIATION FREQUENCY:")
+for abbr, count in abbr_counter.most_common():
+    print(f"{abbr}: {count}")
