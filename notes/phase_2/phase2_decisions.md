@@ -2310,124 +2310,229 @@ The system is functioning as intended for a rule-based candidate generation laye
 
 ### 5. CLINICAL_CONDITION Extraction
 
-Rule-based clinical condition extraction identifies documented diagnoses, adverse events, and complications using deterministic, concept-level regex patterns for broad candidate generation
+Rule-based clinical condition extraction identifies documented diagnoses, pathological states, and complications using deterministic, concept-level regex patterns for broad candidate generation.
 
 ---
 
 #### 5.1 Extraction Decisions
 
-The CLINICAL_CONDITION extraction layer is a recall-first, context-agnostic lexical detector of pathological states. It deliberately over-generates candidates using broad regex pattern matching (re.finditer), avoids deduplication, and defers all semantic interpretation to the downstream transformer.
+**A. Overall extraction strategy**
 
-The CLINICAL_CONDITION entity is intentionally designed as the broadest and most permissive extraction layer, prioritising maximal recall of clinically relevant pathological states. Unlike INTERVENTION or SYMPTOM, this entity captures disease-level concepts, which inherently require contextual interpretation (temporality, certainty, attribution) that cannot be reliably handled with deterministic rules.
+Clinical condition extraction is designed as a recall-first, context-agnostic candidate generator: 
 
-No Context Filtering (Deliberate limitation)
+- Captures any mention of a clinically relevant pathological state without attempting to determine its active, historical, negated, or potential state. 
+- All contextual interpretation is deferred to the downstream transformer.
 
-The rule-based layer does not attempt to determine:
-	•	Temporality (past vs current)
-	•	Certainty (confirmed vs suspected vs ruled out)
-	•	Negation
-	•	Hypothetical or planned diagnoses
+This differs from other entities:
 
-Result:
-The extractor will include:
-	•	Differential diagnoses
-	•	Historical conditions
-	•	Negated conditions
+- **SYMPTOM** → incorporates rule-based refinement (e.g. negation) for higher precision  
+- **INTERVENTION** → constrained to a narrower, action-based clinical space  
+- **CLINICAL_CONDITION** → broad diagnostic space where context (temporality, certainty, attribution) cannot be reliably encoded with rules  
 
-Rationale:
-	•	These distinctions require semantic understanding
-	•	Delegated entirely to the transformer validation layer
+As a result, this layer deliberately prioritises recall over precision, accepting over-generation as a necessary trade-off.
 
-Deduplication Policy
+---
 
-No deduplication at rule stage
-	•	Multiple mentions of the same concept are preserved:
-	•	Across sentences
-	•	Within the same sentence
-	•	Across different lexical forms
+**B. Entity scope definition**
+
+The entity is intentionally defined as a unified clinical problem space, capturing:
+
+- Primary diagnoses  
+- Admitting conditions  
+- In-hospital complications  
+- Acute pathological events
+
+These are not separated at the rule level because they are not cleanly distinguishable in raw clinical text:
+
+- Diagnoses, complications, and historical conditions are frequently interwoven, often within the same sentence. 
+- Separation would require semantic interpretation  
+
+A single broad entity ensures maximal signal capture, with disambiguation handled downstream.
+
+---
+
+**C. Section scope**
+
+Extraction is restricted to four high-yield sections:
+
+- `assessment and plan` (highest value; structured diagnoses and problem lists)  
+- `assessment` (compressed diagnostic summaries)  
+- `hpi` (mixed but critical for admission context and early complications)  
+- `chief complaint` (often contains concise diagnostic labels)  
+
+Design trade-off:
+
+- Including HPI increases noise (historical content)  
+- But exclusion would significantly reduce recall  
+
+---
+
+**D. Concept-based design**
+
+Clinical conditions are mapped to 13 high-level concepts representing common ICU-relevant pathological domains:
+
+- `infection`  
+- `shock`  
+- `respiratory`  
+- `cardiovascular`  
+- `arrhythmia`  
+- `renal_failure`  
+- `neurological`  
+- `bleeding`  
+- `gastrointestinal`  
+- `metabolic`  
+- `hepatic_failure`  
+- `cardiac_arrest`  
+- `vascular`  
 
 Examples:
-	•	“sepsis… septic shock… infection” → all retained
-	•	“AKI… renal failure” → both retained
+
+- `infection` → “sepsis”, “pneumonia”, “bacteremia”, “UTI”  
+- `respiratory` → “ARDS”, “respiratory failure”, “pulmonary edema”  
+- `vascular` → “DVT”, “PE”, “thromboembolism”  
+
+Design principles:
+
+- Concepts represent diagnostic categories, not individual diseases  
+- Patterns prioritise high-yield, commonly documented conditions  
+- No attempt is made to exhaustively enumerate all synonyms  
+- Clear separation from symptoms, findings, or lab abnormalities  
+
+---
+
+**E. Lexical pattern strategy**
+
+Patterns are intentionally broad to reflect real ICU documentation:
+
+- Includes abbreviations, acronyms, and shorthand (e.g. DKA, ARDS, DVT)  
+- Captures multiple lexical variants within a concept  
+- Uses flexible regex rather than strict synonym mapping  
+
+This increases recall but introduces redundancy and ambiguity, which are handled downstream.
+
+---
+
+**F. No contextual or semantic filtering**
+
+The rule-based layer does not attempt to determine:
+
+- Temporality (past vs current)  
+- Certainty (confirmed vs suspected)  
+- Negation  
+- Hypothetical or planned diagnoses  
+
+This is a deliberate limitation. These distinctions require semantic understanding and cannot be implemented reliably with deterministic rules without significant loss of recall and increased brittleness.
+
+---
+
+**G. Sentence-level processing and span alignment**
+
+Extraction is performed at the sentence level:
+
+- Sections are split into sentences  
+- Patterns are applied per sentence  
+- Character offsets are mapped to the full section  
+
+Each extracted span preserves:
+
+- Exact text  
+- Position in source text  
+- Sentence and section context  
+
+This ensures traceability, auditability, and compatibility with downstream validation.
+
+---
+
+**H. Deduplication strategy**
+
+Only exact duplicate spans are removed (same start index, end index, and concept). No concept-level or sentence-level deduplication is performed.
+
+- Multiple mentions of the same concept are preserved  
+- Different lexical forms of the same condition are retained  
 
 Rationale:
-	•	Each span represents a distinct clinical signal
-	•	Deduplication requires semantic judgment (handled downstream)
 
+- Each span represents a distinct clinical signal  
+- Deduplication requires semantic interpretation (delegated downstream)  
 
+---
 
-	•	umbrella terms (“infection”, “bleeding”)
-	•	syndromes (“respiratory failure”)
+**I. Abbreviation handling (validation-driven refinement)**
 
-do not:
-	1.	Try to be ontologically complete
-	2.	Add synonym variants manually
-	3.	Mix:
-	•	diseases
-	•	symptoms
-	•	findings
-	•	lab abnormalities
+During validation, short-form abbreviations (e.g. AF, VT, MI, UA) were explicitly inspected with sentence-level context to assess noise:
 
+- Some abbreviations (e.g. VT, UA) produced high false-positive rates due to ambiguity  
+- Others (e.g. AF, MI, HF) were sufficiently specific in ICU context  
 
-section extraction:
+Decision:
 
-1. ASSESSMENT AND PLAN (highest value)
-	•	This is the single most important section
-	•	Contains:
-	•	Problem list
-	•	Diagnoses (often numbered)
-	•	Explicit complications
+- Ambiguous abbreviations were removed from regex patterns  
+- Informative abbreviations were retained  
 
-2. ASSESSMENT
-	•	Often contains:
-	•	Diagnoses (sometimes compressed)
-	•	Clinical problems stated explicitly
-
-3. HPI (History of Present Illness)
-	•	Important for:
-	•	Pre-existing issues
-	•	Admitting diagnoses
-	•	Post-op complications
-
-HPI is the most varibale section because it contains a mix of historical and current information, often compressed into dense clinical narratives. However, it is critical for capturing conditions that are present on admission or arise post-operatively, which may not be explicitly stated in the assessment. transformer will be responsible for disambiguating these temporal and contextual nuances, but the rule-based layer must ensure maximal recall of all potential clinical condition mentions from this section while staying reasonably precise. 
-
-4. CHIEF COMPLAINT
-	•	Often contains primary diagnosis label
-	•	Sometimes includes coded diagnoses
-
-regex → broad clinical problem mentions (diagnosis + complications)
-        ↓
-transformer → filters to:
-    - active
-    - relevant to admission
-    - not historical
-
-Your label: "CLINICAL_CONDITION"
-
-Extracting ANY clinical problem:
-
-	•	primary diagnosis
-	•	admitting condition
-	•	complications
-	•	acute issues
-
-That is not SIMPLY “complications”.
-
-It is:
-
-clinical problem / condition / diagnosis space
-
-So we chnage 
-
-
+This refinement step improves precision without altering the recall-first design.
 
 ---
 
 #### 5.2 Workflow Implementation
 
-All code logic is implemented in `clinical_condition_rules.py`, which defines the functions `extract_clinical_conditions()`. The main function `extract_clinical_conditions()` applies the extraction across all sentences in the target sections of a note. 
+All code logic is implemented in `clinical_condition_rules.py`, which defines the function `extract_clinical_conditions()`. This function applies deterministic, concept-level extraction across all sentences within predefined clinical-condition-relevant sections.
 
 **Workflow**
+
+1. **Section filtering**  
+  - Input text is processed only if its section belongs to the predefined set:  
+     `ASSESSMENT AND PLAN`, `ASSESSMENT`, `HPI`, `CHIEF COMPLAINT`  
+  - Non-target sections are skipped entirely to constrain the candidate space while preserving high-yield diagnostic content  
+
+2. **Sentence segmentation**  
+  - Section text is split into sentences using `split_into_sentences()`  
+  - Each sentence retains its start offset relative to the full section text  
+  - This enables precise downstream span alignment  
+
+3. **Sentence-level processing**  
+  - Each sentence is processed independently  
+  - Sentence text is lowercased for case-insensitive regex matching  
+  - Original sentence text is preserved for output and traceability  
+
+4. **Concept-level pattern matching**  
+  - Each sentence is evaluated against all concepts defined in `CLINICAL_CONDITION_PATTERNS`  
+  - Each concept corresponds to one or more regex patterns capturing lexical variants (e.g. abbreviations, synonyms, phrasing differences)  
+  - Patterns are applied using `re.finditer()` to identify all non-overlapping matches  
+  - Multiple matches per concept within the same sentence are explicitly allowed  
+
+5. **Span extraction and alignment**  
+  - For each regex match:  
+    - Local match indices are obtained from the sentence  
+    - These are converted to section-level character offsets:  
+      - `global_start = sentence_start + match.start()`  
+      - `global_end = sentence_start + match.end()`  
+    - The exact span text is extracted from the original section text  
+  - This ensures full alignment between extracted entities and source text  
+
+6. **Exact span deduplication**  
+  - A per-sentence `seen_spans` set is used to prevent duplicate extraction of identical spans  
+  - A span is considered duplicate only if all three match:  
+    - Start index  
+    - End index  
+    - Concept label  
+  - No concept-level or semantic deduplication is performed  
+
+7. **Entity construction**  
+  - Each match is structured into a `CLINICAL_CONDITION` entity containing:  
+    - Identifiers (`note_id`, `subject_id`, `hadm_id`, `icustay_id`)  
+    - Extracted span (`entity_text`, `char_start`, `char_end`)  
+    - Concept label (`concept`)  
+    - Context (`sentence_text`, `section`)  
+    - `negated = None` (no rule-based negation applied)  
+    - Validation scaffold:
+      - `is_valid` (to be determined by transformer)  
+      - `confidence`  
+      - Task label: `"clinical_condition_active"`  
+
+8. **Aggregation and output**  
+  - All extracted entities across all sentences are accumulated into a list  
+  - The final output is a list of structured `CLINICAL_CONDITION` candidates  
+  - These candidates are passed downstream for transformer-based validation and contextual filtering  
 
 ---
 
@@ -2441,6 +2546,10 @@ Validation was performed using `validate_clinical_condition_rules.py` on a rando
 
 **Key Findings**
 
+debugging analysis revealed that certain abbreviations (e.g. AF, MI, HF) were consistently used in appropriate clinical contexts and produced valid candidate extractions. In contrast, VT and UA demonstrated high ambiguity:
+	•	“VT” frequently appeared in non-diagnostic contexts (tidal volume shorthand not clearly indicating ventricular tachycardia)
+	•	“UA” was often used in non-cardiac contexts (urinalysis instead of unstable angina), leading to systematic false positives
+
 Remove certain abbreviations as too noisy , validation debugging confirmed that UA and VT generate a high volume of false positives with low recoverable precision downstream.
 
 removed UA (mistaken for urine analysis when we meant unstable angina) and VT (tidal volume captured instead of ventricular tachycardia) from the regex patterns.
@@ -2450,5 +2559,26 @@ This is the correct decision:
 	•	High false-positive risk
 	•	Low recoverable precision downstream
 	•	Not worth keeping in a recall-first system
+
+due to low metric performance i validated again but on 200 reports :
+
+Metric
+Before (30 notes)
+Now (200 notes)
+Interpretation
+Avg per note
+~2.1
+3.75
+Strong increase → better recall
+No extraction rate
+61%
+39.3%
+Large drop → capturing more real conditions
+Total extractions
+38
+401
+Scaling behaves correctly
+
+this is a clear improvement and now aligns with a true recall-first system.
 
 ---
