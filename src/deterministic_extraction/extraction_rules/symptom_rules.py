@@ -90,7 +90,7 @@ SYMPTOM_PATTERNS = {
         r"\b(palpitation(s)?|heart racing)\b"
     ],
     "dyspnoea": [
-        r"\b(short(ness)? of breath|sob|dyspn(o)?ea|breathless(ness)?|diff(iculty)? breath(ing|e)?)\b"
+        r"\b(short(ness)? of br(eath)?|sob|dyspn(o)?ea|breathless(ness)?|diff(iculty)? breath(ing|e)?)\b"
     ],
     "syncope": [
         r"\b(syncop(e|al)|faint(ing|ed|s)?|pass(ing|ed)? out|loss of consc(iousness)?|loc)\b"
