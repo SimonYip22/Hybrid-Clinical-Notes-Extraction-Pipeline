@@ -89,7 +89,7 @@ from deterministic_extraction.extraction_rules.clinical_condition_rules import e
 # ------------------------------------------------------------
 
 ICU_CORPUS = "data/processed/icu_corpus.csv"
-VALIDATION_OUTPUT_PATH = "data/processed/extraction_candidates.jsonl"
+VALIDATION_OUTPUT_PATH = "outputs/extracted_entities/extraction_candidates.jsonl"
 
 SAMPLE_SIZE = 10000
 RANDOM_SEED = 42
