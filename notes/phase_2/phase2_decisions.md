@@ -1848,9 +1848,9 @@ A total of 19 ICU-focused concepts were defined based on:
 
 Examples:
 
-- `SEDATION` → “propofol”, “sedated”, “sedation”  
-- `BLOOD_PRODUCT` → “PRBC”, “FFP”, “transfused”  
-- `AIRWAY_MANAGEMENT` → “intubated”, “ETT”, “extubated”  
+- `sedation` → “propofol”, “sedated”, “sedation”  
+- `blood_product` → “PRBC”, “FFP”, “transfused”  
+- `airway_management` → “intubated”, “ETT”, “extubated”  
 
 Design principle:
 
@@ -2164,10 +2164,10 @@ This indicates appropriate balance between recall and constraint.
 
 Top concepts:
 
-- `BLOOD_PRODUCT` (14)  
-- `SEDATION` (14)  
-- `AIRWAY_MANAGEMENT` (13)  
-- `FLUID_THERAPY` (11)  
+- `blood_product` (14)  
+- `sedation` (14)  
+- `airway_management` (13)  
+- `fluid_therapy` (11)  
 
 Interpretation:
 
@@ -2761,115 +2761,222 @@ The system functions appropriately as a high-recall, rule-based clinical conditi
 
 ---
 
-## Full Pipeline Run
+## Full Extraction Pipeline (End-to-End Run)
 
 ### 1. Objective
 
-- Combine all rule-based extraction components into a unified pipeline
-- Produce transformer-ready structured outputs formatted correctly for downstream validation. This is your actual Phase 3 input dataset for transformer validation and fine-tuning
-- Preserve full provenance (span, sentence, section) as done so in the functions
+- Orchestrate all deterministic extraction components into a single end-to-end pipeline over the ICU corpus
+- Generate a high-recall, transformer-ready candidate dataset in flat JSONL format (one entity per row)
+- Preserve full provenance for each extraction (character span, sentence context, section source) to enable downstream validation and auditability
+- Provide quantitative validation outputs to assess pipeline coverage, extraction yield, and failure modes
 
-### 2. Design rationale
+---
 
-decisions constrained by transformer input requirements, as well as trasnformer validation design (e.g. sentence-level context, traceability, auditability) and also the nature of transformers (single-instance input, no nested lists) and usage of it as a classifier as a pretrained trasnformer where we do not need training.
+### 2. Design Decisions and Rationale
 
+#### 2.1 Flat JSONL Output (Non-Nested Structure)
 
+Each extracted entity is written as a single JSON object per line in a `.jsonl` file. 
 
-Each extracted entity becomes one JSON object = one line in .jsonl
+**Rationale:**
+- Transformers operate on independent instances, not nested structures
+- Each entity must be processed, classified, and scored individually
+- Enables:
+  - Batch processing
+  - Parallel inference
+  - Simple dataset loading (e.g. pandas, PyTorch, HuggingFace)
+  - Direct mapping: 1 row = 1 prediction
 
-Why this is non-negotiable:
-	•	Transformers operate on single instances, not nested lists
-	•	Enables:
-	•	Filtering
-	•	Batching
-	•	Parallel processing
-	•	Easy validation labels
+Flat JSONL is non-negotiable for downstream transformer usage.
 
-Input:
-- ICU corpus
+**Rejected alternative:**
+- Nested structure (note → sections → sentences → entities)
+  - Not compatible with transformer input
+  - Requires flattening later (adds complexity and risk)
 
-Process:
-For each note:
-	1.	Preprocessing
-	2.	Section extraction
-	3.	Sentence segmentation
-	4.	Entity extraction
-	5.	Format into your schema
+---
 
-Output:
-	•	A flat .jsonl file of entity candidates
+#### 2.2 Two-Level Processing Architecture
 
-Flat JSONL (NOT nested per note)
-	•	1 entity = 1 row
-	•	Enables transformer-level validation
-	•	Avoids nested parsing complexity
+Pipeline operates in two stages:
+1. **Note-level processing**
+  - Preprocessing
+  - Section extraction
+2. **Sentence-level processing**
+  - Sentence segmentation
+  - Entity extraction (regex rules)
 
-4. Output Format
+**Rationale:**
+- Clinical notes are structurally hierarchical:
+  - Document → Sections → Sentences → Entities
+- Regex-based extraction performs best at sentence-level granularity
+- Section filtering improves precision without sacrificing recall
+- Maintains:
+  - Contextual integrity (sentence-level meaning)
+  - Provenance traceability (section + sentence + span)
 
-Explain:
-	•	Why JSONL
-	•	Why per-entity rows
-	•	Compatibility with transformer input
+**Outcome:**
+- High-recall candidate generation
+- Clean separation of concerns
+- Modular validation (each stage independently testable)
 
+---
 
-extraction size
+#### 2.3 Transformer-Constrained Schema Design
 
-Stage 1 (debug / sanity)
-	•	30-200 notes
-	•	Already done in validation scripts for entity-specific rules
+Each row is a fully self-sufficient classification unit. Each entity includes:
+- `entity_text`, `concept`, `entity_type`
+- `char_start`, `char_end`
+- `sentence_text`, `section`
+- Metadata: `note_id`, `subject_id`, `hadm_id`, `icustay_id`
+- Placeholder validation fields
 
-Stage 2 (transformer input dataset)
-	•	10,000 notes 
+**Rationale:**
+- Transformers require self-contained inputs
+- No external lookup should be needed at inference time
+- Sentence-level context is required for:
+  - Disambiguation
+  - Negation handling
+  - Temporal interpretation
+- Character offsets ensure:
+  - Exact span traceability
+  - Auditability against source text
 
-	•	Inspect 5 random samples for sanity check
-	•	Confirm:
-	•	schema correct
-	•	entities look reasonable
-  - structure is correct (e.g. char offsets, section labels, sentence text)
+---
 
-Each row = one extracted entity candidate with all metadata and context, ready for transformer validation.
+#### 2.4 Synthetic `note_id` Generation
 
+Source dataset does not include a unique note identifier, so a synthetic `note_id` is generated as `note_{index}` where `index` is the sequential position of the note in the input dataset. This is required for:
+- Grouping entities by note
+- Debugging and traceability
+- Linking outputs back to input rows
 
-note_id is not in the dataframe csv, it is created by simply making it the number of the report using the counter, so since we have 10,000 notes, the note_ids will be note_1, note_2, ..., note_10000
+Simple sequential IDs provide:
+- Determinism
+- Uniqueness within run
+- Sufficient traceability
 
-validation stratgey 
+---
 
-although we validated each component separately, we will also validate the full pipeline output to ensure that the combined system behaves as expected and that the final dataset is of high quality for transformer validation.
+#### 2.5 Sampling Strategy (10,000 Notes)
 
-we will check in the final output file with a random sample and manual check
+Ran full pipeline on 10,000 sampled notes instead of entire corpus (~160k+)
 
-but we will laos print off metrics to confirm how well the system is performing at scale, and that the outputs are consistent with what we observed in the smaller validation samples for each component.
+**Rationale:**
+- Trade-off between:
+  - Computational efficiency
+  - Statistical representativeness
+- 10,000 notes provide:
+  - Stable distribution of entities
+  - Sufficient coverage across sections and concepts
+- Enables:
+  - Rapid iteration
+  - Debugging without long runtimes
 
-Structural validation
-	•	Assertions on:
-	•	required columns
-	•	entity fields
-	•	non-empty text
+**Pipeline stages:**
+- Stage 1: 30–200 notes → rule validation (already completed)
+- Stage 2: 10,000 notes → transformer input dataset
 
-Distribution validation
-	•	Coverage metrics
-	•	Per-entity counts
-	•	Per-note averages
+---
 
+#### 2.6 Validation Strategy (Full Pipeline)
 
-	•	% notes with sections
-	•	% notes with entities
-	•	average entities per note
-	•	any anomalies
+Validation is performed at three levels:
 
-Manual inspection
-	•	Random sample of notes
-	•	Direct JSONL inspection
+**1. Structural Validation**
 
+Assertions enforce:
+- Required input columns exist
+- Non-null text fields
+- Entity schema completeness:
+  - `entity_text` non-empty
+  - `concept` present
+  - `entity_type` present
 
+**Purpose:**
+- Fail fast on data integrity issues
+- Prevent silent corruption
 
+---
+
+**2. Distribution Validation**
+
+Pipeline prints aggregate metrics:
+- % notes with sections
+- % notes with any entities
+- % notes with zero entities
+- Per-entity coverage (symptom/intervention/condition)
+- Total extraction counts
+- Average entities per note
+
+**Purpose:**
+- Detect anomalies at scale
+- Compare against expectations from smaller validation runs
+- Identify:
+  - Under-extraction (rules too strict)
+  - Over-extraction (rules too broad)
+
+---
+
+**3. Manual Inspection**
+
+Two forms:
+- Sample of 5 notes (entity counts per note)
+- Direct inspection of JSONL file
+
+Checks:
+- Schema correctness
+- Reasonable entity distribution
+- Correct:
+  - Character offsets
+  - Sentence context
+  - Section labels
+
+**Purpose:**
+- Human verification of qualitative correctness
+- Catch errors not visible in metrics
 
 ---
 
 ### 3. Workflow Implementation
 
-All code logic is implemented in `run_extraction_pipeline.py`, which orchestrates the entire extraction process, applying all processing functions and all entity-specific extraction functions to each note and formatting the output as a flat .jsonl file.
+All code logic is implemented in `run_extraction_pipeline.py`, which orchestrates the entire extraction process, applying all processing functions and all entity-specific extraction functions to each note and formatting the output as a flat `.jsonl` file.
 
+1. Load ICU corpus from CSV  
+2. Validate required input columns (`SUBJECT_ID`, `HADM_ID`, `ICUSTAY_ID`, `TEXT`)  
+3. Randomly sample 10,000 notes using fixed seed  
+
+4. For each note:
+  - Generate synthetic `note_id`  
+  - Extract metadata (`subject_id`, `hadm_id`, `icustay_id`) and raw text  
+  - Preprocess note text  
+
+5. Perform section extraction → obtain {section_name: section_text}  
+
+6. For each section:
+  - Apply `SYMPTOM` extraction rules  
+  - Apply `INTERVENTION` extraction rules  
+  - Apply `CLINICAL_CONDITION` extraction rules  
+  - Each extractor internally:
+    - Filters relevant sections  
+    - Splits section into sentences  
+    - Applies regex pattern matching  
+    - Generates span-aligned entity candidates  
+
+7. Aggregate all extracted entities across sections into a single note-level list  
+
+8. Update per-note and global extraction metrics  
+
+9. For each entity:
+  - Validate required fields (entity_text, concept, entity_type)  
+  - Write entity as one JSON object (one line) to output `extraction_candidates.jsonl` file  
+
+10. Store summary statistics for first 5 notes (debug sample)  
+
+11. After processing all notes:
+  - Compute aggregate metrics (coverage, counts, averages)  
+  - Print pipeline summary to terminal  
+  - Output sample note summaries for inspection  
 
 ---
 
@@ -2877,34 +2984,138 @@ All code logic is implemented in `run_extraction_pipeline.py`, which orchestrate
 
 #### 4.1 System-Level Metrics
 
+| Metric                          | Value        | Interpretation |
+|--------------------------------|-------------|----------------|
+| Total notes processed          | 10,000      | Matches configured sample size |
+| Notes with sections            | 6,272 (62.7%) | Section extraction is functioning; ~37% of notes lack structured headers |
+| Notes with any entities        | **4,407 (44.1%)** | Less than half of notes produce candidates, expected given section filtering |
+| Notes with zero entities       | 5,593 (55.9%) | Majority of notes produce no candidates; consistent with recall constrained by section filtering |
+
+**Key observations:**
+- Section extraction is the primary bottleneck (only ~63% coverage)
+- Entity extraction is downstream-dependent on section presence
+- High proportion of empty notes is expected given strict section filtering + rule-based approach
+
+---
+
 #### 4.2 Entity-Level Metrics
 
-#### 4.3 Qualitative Inspection 
+**Coverage by entity type:**
+
+| Entity Type        | Notes with Entity | % of Notes |
+|-------------------|------------------|------------|
+| `SYMPTOM`           | 1,722            | 17.2%      |
+| `INTERVENTION`      | 3,959            | 39.6%      |
+| `CLINICAL_CONDITION`| 2,812            | 28.1%      |
+
+**Total extractions:**
+
+| Entity Type        | Total Count |
+|-------------------|------------|
+| `SYMPTOM`           | 9,672      |
+| `INTERVENTION`      | 20,650     |
+| `CLINICAL_CONDITION`| 17,165     |
+
+**Average per non-empty note:**
+
+| Entity Type        | Avg per Note |
+|-------------------|-------------|
+| `SYMPTOM`           | 5.62        |
+| `INTERVENTION`      | 5.22        |
+| `CLINICAL_CONDITION`| 6.10        |
+| **TOTAL**         | **10.78**   |
+
+**Key observations:**
+- `INTERVENTIONS` dominate coverage → expected due to structured care plans and medication mentions
+- `CLINICAL_CONDITION` extraction is strong, reflecting dense diagnostic language
+- `SYMPTOMS` are lowest → expected due to limited section targeting and specifcity of symptom language
+- Average ~11 entities per non-empty note confirms high-recall behaviour (desired for downstream filtering)
+
+---
+
+#### 4.3 Qualitative Inspection
+
+**Sample note-level outputs:**
+
+| Note ID | Symptoms | Interventions | Conditions | Total |
+|--------|----------|--------------|------------|-------|
+| `note_1` | 0        | 11           | 2          | 13    |
+| `note_2` | 0        | 0            | 0          | 0     |
+| `note_3` | 0        | 6            | 1          | 7     |
+| `note_4` | 3        | 3            | 2          | 8     |
+| `note_5` | 0        | 0            | 0          | 0     |
+
+**Interpretation:**
+- Presence of both dense and empty notes confirms correct filtering behaviour
+- Mixed entity distributions across notes indicate no systemic extraction bias
+- High counts (e.g. 13 entities) align with recall-first design
+
+---
+
+**Raw JSONL inspection (entity-level validation):**
+
+**Example row:**
+```json
+{
+  "note_id": "note_4",
+  "subject_id": "68865",
+  "hadm_id": "114838.0",
+  "icustay_id": "270854",
+
+  "entity_text": "Ceftriaxone",
+  "concept": "ANTIBIOTIC_THERAPY",
+  "entity_type": "INTERVENTION",
+
+  "char_start": 18,
+  "char_end": 29,
+  "sentence_text": "CVP Volume status Ceftriaxone Follow cultures Awareness for potential for perinephric abscess in future if doesn improve Vigilance for other infections ICU Care Nutrition: Glycemic Control: Lines / Intubation: Multi Lumen - 06:41 AM 18 Gauge - 06:41 AM Comments: Prophylaxis: DVT: Boots, SQ UF Heparin Stress ulcer: Not indicated VAP: Comments: Communication: Patient discussed on interdisciplinary rounds Comments: Code status:",
+  "section": "assessment and plan",
+
+  "negated": null,
+
+  "validation": {
+    "is_valid": null,
+    "confidence": 0.0,
+    "task": "intervention_performed"
+  }
+}
+```
+
+**Observations:**
+- All entities strictly conform to the expected schema:
+  - Identifiers (`note_id`, `subject_id`, `hadm_id`, `icustay_id`) correctly populated
+  - Extraction fields (`entity_text`, `concept`, `entity_type`) consistent with rule definitions
+  - Provenance fields (`char_start`, `char_end`, `sentence_text`, `section`) present and coherent
+- Span alignment is correct:
+  - Extracted `entity_text` matches substrings within `sentence_text`
+  - Character offsets are consistent with sentence-level indexing
+
+**Entity-type specific correctness:**
+- **SYMPTOM**
+  - `negated` correctly populated (`false` in examples)
+  - `validation.task = "symptom_presence"` correctly assigned
+- **INTERVENTION**
+  - `negated = null` (expected, no negation logic implemented)
+  - `validation.task = "intervention_performed"` correctly assigned
+- **CLINICAL_CONDITION**
+  - `negated = null` (expected)
+  - `validation.task = "clinical_condition_active"` correctly assigned
+
+**Validation scaffold behaviour:**
+- `validation.is_valid = null` → correctly uninitialised for downstream transformer classification
+- `validation.confidence = 0.0` → consistent default baseline
+- `validation.task` is correctly entity-type specific across all examples
+
+**Conclusion:**
+- Output structure is fully compliant with transformer input requirements (one entity per row, flat JSONL)
+- Entity-type logic is correctly applied (including negation handling and task assignment)
+- Provenance and traceability are preserved at sentence and span level
+- No schema violations, missing fields, or inconsistencies observed
+
+Overall, the pipeline output is structurally correct, semantically aligned with design expectations, and ready for downstream transformer-based validation.
+
+---
 
 
 
-### Deterministic Extraction Pipeline (Phase 2)
-
-**Objective:** 
-- Generate high-recall, span-aligned candidate entities (SYMPTOM, INTERVENTION, CLINICAL_CONDITION) for downstream transformer validation.
-
-**Decisions:**
-- Preprocessing first to standardize text.
-- Section extraction filters to limit candidate generation.
-- Sentence segmentation ensures correct span offsets.
-- Separate extractors for each entity type using regex patterns.
-- Flatten all entities per note for JSONL output.
-
-**Workflow Logic:**
-1. Load sample notes
-2. Preprocess
-3. Extract sections
-4. Extract entities per section
-5. Aggregate and write JSONL
-6. Track metrics and small sample output
-
-**Validation Findings:**
-- Metrics capture notes processed, sections found, entities per type, averages per note.
-- Small sample output for quick manual inspection.
-- Ensures outputs are transformer-ready.
 
