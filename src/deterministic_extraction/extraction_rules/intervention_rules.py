@@ -62,79 +62,79 @@ TARGET_INTERVENTION_SECTIONS = {
 # Concept-level intervention candidates mapped to regex patterns for detection
 INTERVENTION_PATTERNS = {
 
-    "AIRWAY_MANAGEMENT": [
+    "airway_management": [
         r"\b(intubated|intubation|reintubated|extubated|endotracheal tube(s)?|ett(s)?|et tube(s)?|tracheostomy|trach(eostomy)?|trachy|airway secured)\b"
     ],
 
-    "OXYGEN_THERAPY": [
+    "oxygen_therapy": [
         r"\b(oxygen therapy|supplemental oxygen|o2 therapy|nasal cannula(s)?|nc(s)?|non[- ]rebreather(s)?|nrb(s)?|face mask oxygen|venturi(s)?|high[- ]flow oxygen|hfno|hfnc(s)?)\b"
     ],
 
-    "MECHANICAL_VENTILATION": [
+    "mechanical_ventilation": [
         r"\b(mechanical vent(ilation)?|mv|ventilated|on ventilator|niv|non[- ]invasive vent(ilation)?|cpap|bipap|psv|pressure supp(ort)?|peep)\b"
     ],
 
-    "FLUID_THERAPY": [
+    "fluid_therapy": [
         r"\b(iv fluid(s)?|intravenous fluid(s)?|ivf(s)?|fluid bolus(es)?|bolus given|crystalloid(s)?|hartmann(')?s|ringer(')?s|normal saline|0\.9% saline|nacl|fluid resus(citation)?|resus fluid(s)?|ns)\b"
     ],
 
-    "VASOPRESSOR_INOTROPE": [
+    "vasopressor_inotrope": [
         r"\b(vasopressor(s)?|inotrope(s)?|inotropic support|pressor(s)?|norad(renaline)?|norepinephrine|adrenaline|epinephrine|(vaso)?pressin|dopamine|dobutamine|neo)\b"
     ],
 
-    "ANALGESIA": [
+    "analgesia": [
         r"\b(analgesia|analgesic(s)?|pain relief|(oro)?morph(ine)?|fent(anyl)?|remifentanil|oxycodone|codeine|paracetamol|acetaminophen|ibuprofen)\b"
     ],
 
-    "SEDATION": [
+    "sedation": [
         r"\b(sedation|sedated|propofol|midazolam|dexmedetomidine|ketamine|sedative|lorazepam|diazepam)\b"
     ],
 
-    "PARALYSIS": [
+    "paralysis": [
         r"\b(rocuronium|atracurium|vecuronium|neuromuscular blockade|nmba(s)?|nmb(s)?)\b"
     ],
 
-    "ANTIBIOTIC_THERAPY": [
+    "antibiotic_therapy": [
         r"\b(antibiotic(s)?|abx('s|s)?|piperacillin[-/ ]tazobactam|tazocin|meropenem|ceftriaxone|co[- ]amox(iclav)?|augmentin|vanc(omycin)?|gent(amicin)?|doxy(cycline)?|metro(nidazole)?|fluclox(acillin)?|amox(icillin)?)\b"
     ],
 
-    "ANTICOAGULATION": [
+    "anticoagulation": [
         r"\b(anticoag(ulation|ulated)?|antiplatelet(s)?|heparin|lmwh|enoxaparin|warfarin|apixaban|rivaroxaban|dabigatran|aspirin|asa|clopidogrel|ticagrelor|fondaparinux)\b"
     ],
 
-    "BLOOD_PRODUCT": [
+    "blood_product": [
         r"\b(transfusion(s)?|transfused|packed red cell(s)?|prbc(s)?|prc(s)?|ffp|fresh frozen plasma|platelet(s)?|plt(s)?|cryo(precipitate)?)\b"
     ],
 
-    "RENAL_REPLACEMENT_THERAPY": [
+    "renal_replacement_therapy": [
         r"\b(rrt|renal replacement therapy|dialysis|h(a)?emodialysis|cvvh|cvvhd|cvvhdf|dialysed)\b"
     ],
 
-    "PROCEDURE_GENERAL": [
+    "procedure_general": [
         r"\b(central line(s)?|cvc(s)?|c(entral)?[ ]v(enous) cath(eter)?(s)?|art(erial)? line(s)?|a[- ]line(s)?|chest drain(s)?|icc(s)?|intercostal catheter(s)?|picc|naso gastric tube(s)?|ng tube(s)?|ngt(s)?|foley catheter(s)?|urinary cath(eter)?(s)?)\b"
     ],
 
-    "SURGICAL_PROCEDURE": [
+    "surgical_procedure": [
         r"\b(surgical (procedure|intervention)|laparotomy|laparoscopy|laparoscopic|thoracotomy|craniotomy|resection(s)?|resected|amputation(s)?|amputated|transplant(ed)?)\b"
     ],
 
-    "NUTRITION": [
+    "nutrition": [
         r"\b(enteral feed(ing)?|ng feed(ing)?|tube feed(ing)?|parenteral nutrition|tpn|peg feed(ing)?|j[- ]tube|jtube|peg)\b"
     ],
 
-    "CARDIOVASCULAR_SUPPORT": [
+    "cardiovascular_support": [
         r"\b(pacing|pacemaker(s)?|cardioversion|dc cv|tvp)\b"
     ],
 
-    "CARDIOVASCULAR_DRUGS": [
+    "cardiovascular_drugs": [
         r"\b(labetalol|metoprolol|nicardipine|diltiazem|verapamil)\b"
     ],
 
-    "ELECTROLYTE_REPLACEMENT": [
+    "electrolyte_replacement": [
         r"\b(electrolyte replacement|electrolyte repletion|potassium replacement|kcl|magnesium replacement|mgso4|calcium replacement|calcium gluconate)\b"
     ],
 
-    "RESUSCITATION": [
+    "resuscitation": [
         r"\b(cpr|cardiopulmonary resuscitation|resuscitation|resus|als|advanced life support|bls|basic life support|rosc|return of spontaneous circulation|defibrillation|defib|defibrillated)\b"
     ]
 }
