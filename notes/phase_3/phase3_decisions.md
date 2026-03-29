@@ -249,29 +249,50 @@ Properties:
 
 Although LLMs are powerful, they are fundamentally misaligned with the requirements of this pipeline.
 
-1. Task mismatch
-    - Required task: Binary classification (`is_valid`) with structured outputs  
-    - LLM capability: Free-form text generation  
+**1. Task mismatch**
 
-Implication:
-- Requires prompt engineering to simulate classification  
-- Adds unnecessary abstraction and failure modes 
+- Required task: Binary classification (`is_valid`) with structured outputs  
+- LLM capability: Free-form text generation  
+- Implication:
+    - Requires prompt engineering to simulate classification  
+    - Adds unnecessary abstraction and failure modes 
 
-2. Output instability
-    - Hard to guarantee strict JSON schema
-    - Requires prompt engineering + parsing
+**2. Output instability and lack of strict determinism**
 
-3. Scalability constraints
-    - High cost for large datasets
-    - Slower batch processing
+- LLM outputs are probabilistic by design:
+  - Token generation involves probability distributions  
+- Even with constrained decoding, outputs can vary across runs, hardware, or implementations  
+- Problems:
+  - Cannot guarantee strict JSON schema compliance  
+  - Requires post-processing, output validation, and error handling layers  
+- In contrast, encoder models produce:
+  - Fixed-dimensional outputs
+  - Stable probabilities
+  - Fully reproducible predictions 
 
-4. Reproducibility concerns
-    - Outputs may vary across runs or model versions
+**3. Scalability and efficiency constraints**
 
-Conclusion:
+- LLMs have high computational cost per inference and slow sequential decoding  
+- Pipeline requirement:
+  - High-throughput batch classification over thousands of entities  
+- Implication:
+  - LLMs are inefficient and costly at scale 
 
-- LLMs are suitable for reasoning and prototyping
-- Not optimal for high-throughput, structured validation pipelines in a clinical context where consistency and interpretability are crucial.
+**4. Reproducibility and auditability**
+
+- Clinical pipelines require:
+  - Stable outputs  
+  - Reproducible behaviour  
+  - Auditability of decisions  
+- LLMs are sensitive to:
+  - Model updates  
+  - Prompt changes  
+  - Sampling behaviour  
+- Encoders provide:
+  - Deterministic forward pass 
+  - Consistent outputs across runs  
+
+LLMs are better suited for exploration, prototyping, and complex reasoning tasks, but not for high-throughput, structured, deterministic validation pipelines in clinical contexts.
 
 ---
 
@@ -279,51 +300,125 @@ Conclusion:
 
 #### 6.1 Final Model Class
 
-Chosen approach for Phase 3:
-1. Use a clinical-domain pretrained encoder model
-2. Apply supervised fine-tuning for classification
+Chosen approach:
 
-Candidate models include:
-- BioClinicalBERT
-- PubMedBERT
-- ClinicalBERT
+1. Clinical-domain pretrained **encoder transformer**
+2. Supervised **fine-tuning for classification**
+
+Candidate models:
+- BioClinicalBERT  
+- PubMedBERT  
+- ClinicalBERT 
 
 ---
 
 #### 6.2 Why Clinical Pretrained Models
 
-Clinical text contains:
-- Abbreviations: “SOB”, “PRBC”, “NGT” 
-- Domain-specific phrasing 
-- Non-standard grammar and shorthand
+Clinical text differs significantly from general language:
 
-General models:
-- Misinterpret or ignore clinical shorthand and patterns
+- Abbreviations: “SOB”, “PRBC”, “NGT”  
+- Domain-specific terminology  
+- Fragmented, shorthand-heavy syntax  
+- Non-standard grammar  
 
-Clinical models:
-- Pretrained on MIMIC notes or PubMed abstracts
-- Already encode clinical terminology and ICU-style documentation patterns
+General-domain models:
+
+- Trained on Wikipedia / BooksCorpus  
+- Limited exposure to clinical language  
+- Misinterpret:
+  - Abbreviations  
+  - ICU shorthand  
+  - Domain-specific phrasing  
+
+Clinical-domain models:
+
+- Pretrained on:
+  - MIMIC clinical notes (BioClinicalBERT)  
+  - PubMed abstracts (PubMedBERT)  
+- They learn:
+  - Clinical vocabulary  
+  - Abbreviation usage  
+  - Real-world documentation patterns  
 
 Outcome:
-- Stronger domain understanding from the start
-- Improved accuracy in understanding and classifying clinical sentences
-- Reduced need for large training datasets to learn clinical language patterns from scratch
+
+- Better contextual understanding  
+- Higher classification accuracy  
+- Reduced need for large fine-tuning datasets  
 
 ---
 
-#### 6.3 Why Fine-Tuning vs Training
+#### 6.3 Why Fine-Tuning vs Training from Scratch
 
+**A. Model Training**
 
+Model training from scratch involves:
+
+- Initialising model weights randomly  
+- Training on very large corpora (millions–billions of tokens)  
+- Learning:
+  - Language structure  
+  - Grammar  
+  - Domain knowledge  
+  - Semantic relationships  
+- Requirements:
+  - Massive labelled or unlabeled datasets  
+  - Significant compute (GPUs/TPUs)  
+  - Long training time  
+
+Why training from scratch is not feasible:
+
+- Phase 2 does not provide:
+  - Large-scale labelled datasets  
+  - Sufficient data diversity  
+- Resource constraints:
+  - Compute cost is prohibitive  
+  - Time-to-iteration is too slow  
+- Most importantly:
+  - The task does not require learning language from scratch  
+  - Only requires adapting existing language understanding  
+
+---
+
+**B. Fine-Tuning**
+
+Fine-tuning involves:
+
+- Starting from a pretrained model  
+- Adding a task-specific classification head  
+- Training on a smaller labelled dataset  
+
+Process:
+
+1. Input: `(sentence_text, entity_text)`  
+2. Encode full sentence context  
+3. Extract contextual representation  
+4. Pass through classification head  
+5. Optimise for task-specific objective (e.g. binary classification loss)  
+
+Why fine-tuning is appropriate:
+
+- Leverages pretrained knowledge as language understanding is already learned  
+- Requires much less data and less compute  
+- Adapts model to:
+  - Task-specific definitions (e.g. “valid intervention”)  
+  - Entity-specific semantics  
+
+Fine-tuning transforms a general clinical language model into a task-specific clinical reasoning model without needing large-scale training.
 
 ---
 
 #### 6.4 Candidate Model Comparison
 
-| Model              | Domain Fit | Performance | Efficiency | Notes |
-|------------------|-----------|------------|------------|------|
-| BioClinicalBERT  | High      | High       | Moderate   | Best fit for ICU notes (MIMIC) |
-| PubMedBERT       | Medium    | High       | Moderate   | Strong biomedical knowledge |
-| ClinicalBERT     | Medium    | Moderate   | Moderate   | Older, less specialised |
+| Model              | Pretraining Data        | Domain Focus        | Strengths | Limitations |
+|------------------|------------------------|---------------------|----------|------------|
+| **BioClinicalBERT** | MIMIC clinical notes    | ICU / clinical text | Best match to ICU language, strong shorthand handling | Slightly domain-specific |
+| **PubMedBERT**     | PubMed abstracts        | Biomedical research | Strong biomedical knowledge, robust terminology | Less exposure to clinical note structure |
+| **ClinicalBERT**   | Mixed clinical corpora  | General clinical    | Earlier clinical adaptation | Older, less optimised pretraining |
+
+- **BioClinicalBERT:** best for real-world ICU notes (matches dataset distribution)  
+- **PubMedBERT:** best for formal biomedical literature  
+- **ClinicalBERT:** earlier, less specialised variant  
 
 ---
 
@@ -331,25 +426,56 @@ Outcome:
 
 Selected: **BioClinicalBERT**
 
-Rationale:
-- Pretrained on clinical notes (closest match to ICU data)
-- Strong performance on clinical NLP tasks
-- Best alignment with Phase 2 data distribution
+**Rationale:**
+
+1. **Data alignment**
+  - Pretrained on MIMIC notes → closest match to ICU dataset  
+
+2. **Language compatibility**
+  - Strong handling of:
+    - Abbreviations  
+    - Clinical shorthand  
+    - Irregular sentence structures  
+
+3. **Task alignment**
+  - Designed for clinical NLP tasks  
+  - Proven performance on:
+    - Clinical classification  
+    - Entity understanding  
+
+4. **Efficiency**
+  - Encoder-based → fast, parallelisable  
+  - Suitable for batch inference  
+
+**Trade-offs:**
+
+| Aspect        | Outcome |
+|--------------|--------|
+| Performance  | High (domain-aligned) |
+| Efficiency   | Moderate (acceptable for batch processing) |
+| Determinism  | Strong (stable inference outputs) |
+| Flexibility  | Lower than LLMs, but sufficient for classification |
 
 ---
 
 ### 7. Final Decision Summary
 
+Final design:
 - Use BioClinicalBERT (clinical pretrained encoder)
-- Apply supervised fine-tuning for classification
+- Apply supervised fine-tuning for entity-level classification
 - Input: `(sentence_text, entity_text)`
-- Output: structured validation (`is_valid`, `confidence`, `task`)
-- Avoid:
-  - Rule expansion (too brittle)
-  - Classical ML (insufficient context)
-  - LLMs (inefficient, unstable)
+- Output: `is_valid`, `confidence`, `task`
 
-**Result:**
-A robust, scalable, and clinically aligned validation layer that complements Phase 2 and enables reliable downstream analysis.
+Key architectural decisions:
+- Deterministic encoder-based inference  
+- No generative modelling  
+- No expansion of rule-based logic  
+- No reliance on prompt-based systems 
+
+The result is a robust, scalable, and reproducible validation layer that:
+- Accurately interprets clinical context  
+- Resolves ambiguity (negation, temporality, intent)  
+- Integrates seamlessly with Phase 2 outputs  
+- Produces structured, audit-ready predictions for downstream use  
 
 ---
