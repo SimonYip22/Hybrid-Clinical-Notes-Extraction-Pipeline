@@ -66,11 +66,12 @@ Examples:
 - “history of MI” → condition = **invalid (not active)**
 
 Key Requirement:
-- Interpret meaning of entity within full sentence context
-- Handle:
+- Task is to interpret meaning of entity within full sentence context
+- Be able to handle ICU-specific language:
   - Clinical shorthand
   - Multi-clause sentences
   - Ambiguity and implicit meaning
+- With constraints of reproducibility, efficiency, and structured outputs
 
 ---
 
@@ -441,10 +442,12 @@ Selected: **BioClinicalBERT**
   - Designed for clinical NLP tasks  
   - Proven performance on:
     - Clinical classification  
-    - Entity understanding  
+    - Entity understanding
+  - Fine-tuning suitable for binary classification of entity validity  
 
 4. **Efficiency**
-  - Encoder-based → fast, parallelisable  
+  - Encoder-based → fast, parallelisable implementation  
+  - Compute efficient
   - Suitable for batch inference  
 
 **Trade-offs:**
@@ -458,7 +461,7 @@ Selected: **BioClinicalBERT**
 
 ---
 
-### 7. Final Decision Summary
+### 7. Final Design Decision
 
 Final design:
 - Use BioClinicalBERT (clinical pretrained encoder)
