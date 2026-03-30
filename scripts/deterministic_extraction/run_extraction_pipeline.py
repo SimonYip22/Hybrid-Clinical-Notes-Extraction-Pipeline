@@ -32,7 +32,7 @@ Workflow:
 
 Outputs:
     1. JSONL File (primary output):
-        Path: data/processed/extraction_candidates.jsonl
+        Path: data/interim/extraction_candidates.jsonl
 
         Format:
             - One JSON object per line (newline-delimited JSON)
@@ -73,6 +73,7 @@ Notes:
 # ------------------------------------------------------------
 
 import json
+from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 import random
@@ -89,7 +90,9 @@ from deterministic_extraction.extraction_rules.clinical_condition_rules import e
 # ------------------------------------------------------------
 
 ICU_CORPUS = "data/processed/icu_corpus.csv"
-VALIDATION_OUTPUT_PATH = "outputs/extracted_entities/extraction_candidates.jsonl"
+VALIDATION_OUTPUT_PATH = "data/interim/extraction_candidates.jsonl"
+
+Path(VALIDATION_OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 SAMPLE_SIZE = 10000
 RANDOM_SEED = 42
