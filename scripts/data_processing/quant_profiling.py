@@ -29,6 +29,7 @@ Outputs:
 """
 
 import pandas as pd
+from pathlib import Path
 import re
 from collections import Counter
 
@@ -40,9 +41,16 @@ from collections import Counter
 INPUT_PATH = "data/processed/icu_corpus.csv"
 SAMPLE_PATH = "data/sample/profiling_sample_500.csv"
 
+Path(SAMPLE_PATH).parent.mkdir(parents=True, exist_ok=True)
+
+
 # Output paths for profiling results
 PER_NOTE_OUTPUT = "data/sample/profiling_per_note.csv"
 SUMMARY_OUTPUT = "data/sample/profiling_summary.csv"
+
+Path(PER_NOTE_OUTPUT).parent.mkdir(parents=True, exist_ok=True)
+Path(SUMMARY_OUTPUT).parent.mkdir(parents=True, exist_ok=True)
+
 
 # Sampling parameters
 SAMPLE_SIZE = 500
