@@ -599,7 +599,7 @@ The system prioritises:
 
 **File:**  
 - `scripts/deterministic_extraction/run_extraction_pipeline.py`
-- `outputs/extracted_entities/extraction_candidates.jsonl`
+- `data/interim/extraction_candidates.jsonl`
 
 ---
 
@@ -725,9 +725,9 @@ Full raw outputs in `extraction_candidates.jsonl` and validation metrics in `pha
 `notes/phase_2/`:
 - `header_pattern_exploration.ipynb` — exploration of potential section headers
 
-### 14.2 Data Outputs
+### 14.2 File Outputs
 
-`outputs/extracted_entities/`:
+`data/interim`:
 - `extraction_candidates.jsonl` — full set of extracted entity candidates from 10,000-note sample
 
 ### 14.3 Documentation
