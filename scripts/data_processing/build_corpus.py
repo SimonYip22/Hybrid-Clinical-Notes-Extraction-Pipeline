@@ -61,6 +61,16 @@ Intended Use
 This corpus is designed for downstream NLP feature extraction.
 
 """
+
+from pathlib import Path
+
+# --------------------------------
+# Config
+# --------------------------------
+
+OUTPUT_PATH = "data/processed/icu_corpus.csv"
+Path(OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
+
 # --------------------------------
 # Load Data
 # --------------------------------
@@ -252,4 +262,4 @@ print("Number of reports:", (corpus.shape[0]))
 print("Number of columns:", (corpus.shape[1]))
 
 # Save output
-corpus.to_csv("data/processed/icu_corpus.csv", index=False)
+corpus.to_csv(OUTPUT_PATH, index=False)
