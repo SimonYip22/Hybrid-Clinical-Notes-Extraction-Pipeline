@@ -1171,7 +1171,8 @@ This constraint ensures:
 
 **Include**
 - Procedures (e.g., intubation, line insertion)  
-- Treatments initiated (e.g., medications started)  
+- Treatments initiated (e.g., medications started) currently active OR currently in effect
+- Continuing, titrating, weaning, or stopping/holding treatments initiated in the ICU context
 
 **Exclude**
 - Planned or hypothetical actions  
