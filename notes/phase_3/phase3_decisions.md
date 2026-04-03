@@ -483,49 +483,239 @@ The result is a robust, scalable, and reproducible validation layer that:
 
 ---
 
+## Dataset Construction and Annotation Preparation
 
+### 1. Objective
 
-Dataset Size
-	•	Total annotated: 600 entities
+To construct a high-quality, annotation-ready dataset for training and evaluating a transformer-based validation model. The dataset must:
 
-This is sufficient for:
-	•	Binary classification
-	•	Sentence-level contextual tasks
-	•	Fine-tuning a pretrained clinical transformer
+- Be sufficient for fine-tuning a pretrained model
+- Be efficient to manually annotate
+- Maintain balanced representation across entity types
+- Support reproducible downstream training, validation, and testing
+
+---
+
+### 2. Sampling Strategy
+
+#### 2.1 Dataset Size
+
+A total of 600 entities were selected for annotation. This size was chosen because:
+
+- It is sufficient for fine-tuning a pretrained transformer (e.g., ClinicalBERT)
+- It supports binary classification at sentence level
+- It balances annotation effort vs performance gains
+
+The datasset size is too small for training from scratch, but appropriate for fine-tuning pretrained models: 
+ 
+- This is because the model already encodes language structure and clinical semantics. 
+- The dataset is used to learn task-specific definitions and decision boundaries  
 
 Increasing beyond 600:
-	•	Yields diminishing returns
-	•	Increases annotation time significantly
-	•	Not necessary for this project scope
 
-⸻
+- Produces diminishing returns
+- Increases annotation cost significantly
+- Is unnecessary for this project scope  
 
-Is 600 “too small”?
+Dataset expansion (800–1000) is only justified if:
 
-Objectively:
-	•	Small for training from scratch → Yes
-	•	Appropriate for fine-tuning BERT → No
+- Model performance is unstable  
+- Clear underfitting is observed  
 
-Why it works:
-	•	The model already understands language and clinical patterns
-	•	You are only teaching:
-	•	Task definition
-	•	Decision boundaries
+---
 
-⸻
+#### 2.2 Balanced Sampling by Entity Type
 
-When to increase beyond 600
+Sampling is performed equally across entity types using `entity_type`-based sampling:
 
-Only if:
-	•	Test performance is unstable
-	•	Clear underfitting is observed
-	•	Additional time is available
+- `SYMPTOM`: 200  
+- `INTERVENTION`: 200  
+- `CLINICAL_CONDITION`: 200  
 
-Then increase to:
-	•	800–1000
+This ensures:
 
-Otherwise:
-	•	600 is the optimal trade-off
+- Balanced semantic coverage  
+- Reduced bias toward any entity type  
+- Improved generalisation across tasks  
+
+---
+
+### 3. Field Selection and Data Structure
+
+The dataset is constructed from the JSONL extraction outputs (`extraction_candidates.jsonl`) and flattened into tabular csv format.
+
+#### 3.1 Retained Fields
+
+- `note_id` → traceability and debugging  
+- `section` → contextual location in note  
+- `concept` → normalized concept label  
+- `entity_text` → extracted entity span  
+- `entity_type` → classification category (SYMPTOM, INTERVENTION, CLINICAL_CONDITION)
+- `sentence_text` → classification context (critical input)  
+- `negated` → retained for rule-based comparison (not used in training)  
+- `task` → defines classification objective  
+- `confidence` → placeholder (0.0), used later for model outputs  
+
+---
+
+#### 3.2 Annotation Field
+
+`is_valid` is the only manually annotated field:
+
+- Binary label: `True` / `False`
+- Represents ground truth for model training  
+
+All other fields remain unchanged to preserve consistency with upstream extraction to ensure:
+
+- Low annotation complexity  
+- High consistency  
+- Clear separation between:
+  - Extraction (rule-based)
+  - Validation (model-based)
+
+---
+
+#### 3.3 Confidence Score Retention
+
+The `confidence` field is retained in the dataset but is not used during manual annotation or training input.
+
+Its purpose is to support post-training evaluation and calibration, where it will store model-generated confidence scores. This enables:
+
+- Threshold tuning (optimising decision boundaries)
+- Prediction ranking (prioritising high-confidence outputs)
+- Error analysis (identifying overconfident incorrect predictions)
+
+The field is initialised during sampling (default `0.0`) to maintain schema consistency and allow seamless integration of model outputs later in the pipeline.
+
+---
+
+#### 3.4 Negation Flag Retention
+
+The `negated` field is retained to enable comparison between rule-based extraction outputs and transformer-based validation, as its role differs by entity type. 
+
+For `SYMPTOM`:
+
+- The `negated` flag is populated during rule-based extraction (Phase 2)
+- It directly determines rule-based validity:
+  - `negated = True` → invalid (`False`)
+  - `negated = False` → valid (`True`)
+- This provides a strong baseline, as symptom negation is reliably captured using deterministic rules
+
+For `INTERVENTION` and `CLINICAL_CONDITION`:
+
+- The `negated` field is not populated (null) as no rule-based validity filtering is applied
+- All extracted entities are treated as valid under the rule-based system
+- This reflects an intentional high-recall design:
+  - Maximise capture of candidate entities
+  - Defer validity determination to the transformer model
+- Validity for these entity types depends on temporality and intent, which cannot be reliably captured using deterministic rules alone
+
+The `negated` field is therefore critical for `SYMPTOM` validation:
+
+- Establishes a strong rule-based baseline where transformer improvements are expected to be more modest
+- Enables direct comparison between deterministic negation logic and transformer predictions
+
+For `INTERVENTION` and `CLINICAL_CONDITION` however:
+
+- Model performance improvements are evaluated independently of `negated`, as no rule-based filtering is applied to these entity types.
+- This establishes a weak rule-based baseline, allowing the transformer to provide substantial performance gains by learning complex contextual cues that determine validity.
+
+---
+
+### 4. Output Design
+
+Two files are generated for reproducibility and data integrity:
+
+`annotation_sample_raw.csv`:
+- Always overwritten  
+- Contains freshly sampled dataset  
+- Used for traceability and reproducibility  
+
+`annotation_sample_labeled.csv`:
+- Created only if it does not exist  
+- Used for manual annotation  
+- Preserved to prevent accidental data loss  
+
+This design ensures:
+- Original sample is always recoverable  
+- Manual annotations are never overwritten  
+
+---
+
+### 5. Implementation Workflow 
+
+The dataset construction process is implemented in `sample_entities.py` and follows a deterministic, reproducible pipeline:
+
+1. **Load extraction candidates**
+  - Read JSONL file (`extraction_candidates.jsonl`)
+  - Each line corresponds to a single extracted entity
+  - Parse each line into a Python dictionary
+
+2. **Field extraction and flattening**
+  - Extract relevant fields:
+    - `note_id`, `section`, `concept`, `entity_text`, `entity_type`, `sentence_text`, `negated`
+  - Extract nested validation fields safely:
+    - `task` via `row.get("validation", {}).get("task")`
+    - `confidence` with default `0.0`
+  - Append all records into a list
+
+3. **DataFrame construction**
+  - Convert records into a pandas DataFrame
+  - This forms the full pool of candidate entities (~40k+)
+
+4. **Per-entity-type filtering**
+  - Split DataFrame into subsets by:
+    - `SYMPTOM`
+    - `INTERVENTION`
+    - `CLINICAL_CONDITION`
+
+5. **Balanced sampling**
+  - For each entity type:
+    - Verify sufficient sample size (≥200), else raise error
+    - Randomly sample **200 rows** using fixed `random_state=42`
+  - Ensures reproducibility and equal class representation
+
+6. **Dataset assembly**
+  - Concatenate sampled subsets into a single DataFrame (600 rows total)
+  - Reset index to ensure clean ordering
+
+7. **Global shuffling**
+  - Shuffle entire dataset (`frac=1`, `random_state=42`)
+  - Prevents ordering bias during manual annotation
+
+8. **Annotation column initialization**
+  - Add `is_valid` column initialised to `None`
+  - Serves as the ground truth label to be manually populated
+
+9. **Output handling**
+  - Save `annotation_sample_raw.csv`:
+    - Always overwritten
+    - Acts as reproducible source sample
+  - Save `annotation_sample_labeled.csv`:
+    - Created only if it does not already exist
+    - Prevents accidental overwrite of manual annotations
+
+This pipeline ensures:
+- Deterministic sampling (via fixed seed)
+- Balanced representation across entity types
+- Preservation of annotation work
+- Full reproducibility of dataset construction
+
+---
+
+
+
+
+
+
+
+
+
+
+
+---
+
+
 
 ⸻
 
@@ -667,27 +857,7 @@ Why this works
 
 
 
-Annotation Scope (Minimal)
 
-Only annotate:
-
-"is_valid": true / false
-
-Do NOT modify:
-	•	task
-	•	confidence
-	•	Any other fields
-
-⸻
-
-Confidence Scores
-	•	Produced by the model (softmax output)
-	•	Not manually annotated
-
-Used later for:
-	•	Threshold tuning
-	•	Ranking predictions
-	•	Error analysis
 
 ⸻
 
@@ -849,3 +1019,64 @@ Acute conditions need to reflect **current patient status**. This is aligned wit
 - **clinical_condition_active** → state-based  
 
 This framework is consistent, defensible, and provides clear guidance for both manual annotation and transformer-based filtering.
+
+
+
+
+
+
+
+
+
+
+=== BASIC INFO ===
+Total rows: 600
+Index(['note_id', 'section', 'concept', 'entity_text', 'entity_type',
+       'sentence_text', 'negated', 'task', 'confidence', 'is_valid'],
+      dtype='object')
+
+=== MISSING VALUES ===
+note_id            0
+section            0
+concept            0
+entity_text        0
+entity_type        0
+sentence_text      0
+negated          400
+task               0
+confidence         0
+is_valid           0
+dtype: int64
+
+Missing is_valid: 0
+
+=== UNIQUE is_valid VALUES ===
+[ True False]
+
+=== is_valid DISTRIBUTION ===
+is_valid
+True     305
+False    295
+Name: count, dtype: int64
+
+=== TASK DISTRIBUTION ===
+task
+symptom_presence             200
+clinical_condition_active    200
+intervention_performed       200
+Name: count, dtype: int64
+
+=== TASK vs is_valid ===
+is_valid                   False  True 
+task                                   
+clinical_condition_active    122     78
+intervention_performed        71    129
+symptom_presence             102     98
+
+=== CHECK TASK SIZE (expect 200 each) ===
+symptom_presence: 200
+clinical_condition_active: 200
+intervention_performed: 200
+
+=== INVALID LABEL ROWS ===
+Number of invalid label rows: 0
