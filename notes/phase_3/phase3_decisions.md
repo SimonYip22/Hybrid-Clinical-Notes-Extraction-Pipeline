@@ -112,6 +112,7 @@ Implication:
   - Clinical shorthand  
   - Complex sentence structures  
 
+---
 
 **2. Convolutional Neural Networks (CNNs for Text)**
 
@@ -132,6 +133,7 @@ Failure cases:
 Implication:
 - Cannot reliably determine whether an entity is valid within full sentence context  
 
+---
 
 **3. Recurrent Neural Networks (RNNs / LSTMs)**
 
@@ -352,7 +354,7 @@ Outcome:
 
 #### 6.3 Why Fine-Tuning vs Training from Scratch
 
-**A. Model Training**
+**A. Model Training From Scratch**
 
 Model training from scratch involves:
 
@@ -1453,6 +1455,13 @@ INTERVENTION
 Moderate improvement (complexity in temporality and intent)
 CLINICAL_CONDITION
 Largest improvement (highest complexity, weakest baseline)
+
+---
+
+In your context:
+	•	“Training” = fine-tuning a pretrained model
+	•	You are not training from scratch
+	•	You are updating weights of an existing model for a new task
 
 
 
