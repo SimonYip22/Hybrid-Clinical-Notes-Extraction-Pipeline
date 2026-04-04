@@ -599,7 +599,7 @@ The system prioritises:
 
 **File:**  
 - `scripts/deterministic_extraction/run_extraction_pipeline.py`
-- `data/interim/extraction_candidates.jsonl`
+- `data/interim/extraction_candidates.jsonl` - 47,487 extracted entities from 10,000-note sample
 
 ---
 
@@ -728,7 +728,7 @@ Full raw outputs in `extraction_candidates.jsonl` and validation metrics in `pha
 ### 14.2 File Outputs
 
 `data/interim`:
-- `extraction_candidates.jsonl` — full set of extracted entity candidates from 10,000-note sample
+- `extraction_candidates.jsonl` — full set of 47,487 extracted entity candidates from 10,000-note sample
 
 ### 14.3 Documentation
 
