@@ -1359,81 +1359,1051 @@ The pipeline is ready to proceed to transformer fine-tuning and evaluation.
 
 ### 1. Objective
 
-Train BioClinicalBERT to improve rule-based extraction with learned contextual reasoning for validation.
+The objective of this step is to train a transformer-based classifier (BioClinicalBERT) that functions as a validation layer for rule-based entity extraction.
 
-rememebr 
+This transforms the pipeline from a purely rule-based system (which prioritises recall but produces false positives) into a hybrid system where rule-based extraction generates candidates and the model filters them using contextual understanding.
 
-What You Are Actually Training
+The aim is to improve overall extraction quality by:
+- Increasing precision through removal of false positives  
+- Maintaining recall from the rule-based stage  
+- Learning contextual patterns that cannot be captured by fixed rules  
 
-You are not training a model from scratch.
-
-You are:
-	•	Taking BioClinicalBERT
-	•	Adding a classification head (binary output: True/False)
-	•	Fine-tuning it on your dataset so it learns:
-
-“Given a sentence + entity context → is this entity valid for this task?”
+This step introduces a data-driven, context-aware validation mechanism that improves robustness and generalisation of the extraction pipeline.
 
 ---
 
-Define the Learning Problem Properly
+### 2. Learning Paradigm: Fine-Tuning for Classification
 
-Input (X)
+#### 2.1 Overview 
 
-You need to decide what text goes into the model.
+This step uses fine-tuning, a form of transfer learning, rather than training a model from scratch.
 
-Do NOT include:
-	•	task as raw label input (this becomes leakage unless encoded properly)
-	•	negated
-	•	confidence
+- Training refers to the optimisation process (epochs, batches, gradient updates)  
+- Fine-tuning specifies how training is performed: starting from a pretrained model and adapting it to a new task  
 
-Output (y)
-
-is_valid → 0 or 1
-
-Convert:
-	•	True → 1
-	•	False → 0
+In this context:
+- The model is trained 
+- That training is specifically fine-tuning of a pretrained transformer
 
 ---
 
-Tokenisation
+#### 2.2 Workflow
 
-Use HuggingFace tokenizer:
-	•	Hugging Face Transformers
+The fine-tuning process consists of adapting a pretrained model (**BioClinicalBERT**) to a binary classification task:
 
-we need to explain how we do tokenisation, what its purpose is, and how it works with the model input formatting
-
----
-
-Model
-
-AutoModelForSequenceClassification
-
-Bio_ClinicalBERT
-
-we need to explain everything as in what we are doing and how we load the model 
+1. Load pretrained BioClinicalBERT (already trained on clinical text)
+2. Add a classification head (binary output layer)
+3. Input task-specific data (entity + context)
+4. Update model weights using labelled examples
 
 
----
+| Component | Role | What Changes During Training |
+|----------|------|-----------------------------|
+| BioClinicalBERT encoder | Encodes clinical language into contextual embeddings | Slightly adjusted to better represent task-specific patterns |
+| Classification head | Maps embeddings → binary output | Fully learned from scratch |
+| Overall model | End-to-end prediction system | Learns decision boundary for valid vs invalid entities |
 
-Training setup
+This results in the following architecture:
 
-Use Trainer API: from transformers import Trainer, TrainingArguments
-
-we need to explain why we are using the Trainer API, what it does, and how it simplifies the training loop, handles batching, and manages evaluation during training
-
-Key parameters:
-	•	epochs: 3–5
-	•	learning rate: 2e-5
-	•	batch size: 8–16
-	•	evaluation strategy: "epoch"
-
-we will need to explain the rationale behind these hyperparameters, how they are chosen based on best practices for fine-tuning transformers, and how they impact model performance and training dynamics
+> **Input → BioClinicalBERT encoder → classification head → binary prediction (valid / invalid)**
 
 ---
 
-Single Model vs Task-Aware Model
+#### 2.3 Rationale
+
+The focus here is not on choosing fine-tuning (covered previously), but on why it is effective for this specific step:
+
+- The pretrained model already captures clinical language structure and semantics
+- The task is decision-based (classification) rather than language modelling
+- Fine-tuning allows the model to learn task-specific decision boundaries without relearning language
+
+This is necessary because:
+
+- The annotated dataset is too small to train a model from scratch  
+- The task is specialised, requiring adaptation to patterns of entity validity  
+- Rule-based methods lack the ability to capture context-dependent correctness
+
+Fine-tuning enables the model to:
+
+- Leverage existing clinical knowledge
+- Adapt efficiently to a small labelled dataset
+- Learn contextual validation patterns beyond rule-based logic
+
+This makes it the most appropriate training paradigm for introducing a learned validation layer into the pipeline.
+
+---
+
+### 3. Problem Formulation
+
+This task is formulated as a supervised binary classification problem, where the model predicts whether an extracted entity is valid given its sentence context and associated metadata.
+
+#### 3.1 Input format Decision 
+
+The key design decision is how to represent input to a single transformer model. There are two possible approaches:
+
+| Option | Description | Pros | Cons |
+|-------|------------|------|------|
+| A: Sentence-only | Model receives only `sentence_text` | Simple, standard, easy to implement | Model must infer entity and task implicitly |
+| B: Structured input (chosen) | Model receives entity + task + context explicitly | Clear signal, better disambiguation, improved precision | Slightly more implementation effort |
+
+Structured input is necessary because the task is not generic NLP, but entity-level validation within a sentence. Without explicit structure, the model must infer:
+
+- Which part of the sentence is relevant  
+- Which entity is being evaluated  
+- What task context applies  
+
+This introduces unnecessary ambiguity and reduces performance.
+
+---
+
+#### 3.2 Input (X)
+
+Each example is converted into a single structured text string, combining all relevant fields.
+
+| Column | Role | Included in Input |
+|--------|------|------------------|
+| `sentence_text` | Core context | Yes |
+| `entity_text` | Target entity | Yes |
+| `entity_type` | Entity category | Yes |
+| `task` | Task context | Yes |
+| `concept` | Mapping of entity to concept | Yes|
+
+Excluded fields:
+
+| Column | Reason for Exclusion |
+|--------|--------------------|
+| `is_valid` | Target variable (label leakage if included) |
+| `negated`, `confidence` | Derived features → risk of leakage |
+| `section` | Not essential for validation task |
+
+---
+
+#### 3.3 Output (y)
+
+The target variable is:
+
+- `is_valid` → binary label
+
+Encoding:
+
+| Label | Value |
+|------|------|
+| Valid | 1 |
+| Invalid | 0 |
+
+The model produces:
+- Logits (raw scores for each class)
+- Probabilities via softmax
+- Final prediction via argmax
+
+---
+
+### 4. Tokenisation and Input Formatting
+
+#### 4.1 Purpose
+
+Transformer models cannot process raw text or structured tabular data directly.  
+All inputs must be converted into a numerical sequence representation.
+
+In this pipeline:
+- Structured fields (entity, task, sentence) are first combined into a single text string
+- This string is then tokenised into a format the model can process
+
+Tokenisation therefore serves to:
+- Convert text into numerical inputs (token IDs)
+- Standardise input length for batch processing
+- Preserve contextual information for the transformer model
+
+---
+
+#### 4.2 Input Formatting (Pre-Tokenisation)
+
+Before tokenisation, all relevant fields are concatenated into a structured string:
+
+```python
+[ENTITY TYPE] {entity_type}
+[ENTITY] {entity_text}
+[CONCEPT] {concept}
+[TASK] {task}
+[TEXT] {sentence_text}
+```
+
+This design ensures:
+- Explicit representation of the entity being evaluated  
+- Clear encoding of task context  
+- Preservation of full sentence information  
+
+Key properties:
+
+| Property | Purpose |
+|---------|--------|
+| Special tags (e.g. `[ENTITY]`) | Provide structure within a flat text sequence |
+| Single concatenated string | Required for transformer input |
+| Consistent format | Ensures alignment between training and inference |
+| Input format must remain identical during training and inference | Prevents discrepancies that could degrade performance |
+| No label-derived features should be included | Prevents data leakage and ensures model learns from valid patterns |
+
+---
+
+#### 4.3 Tokenisation Process
+
+Tokenisation is performed using the BioClinicalBERT tokenizer (WordPiece-based):
+
+1. **Token splitting**
+  - Text is split into tokens at the subword level (WordPiece tokenisation)
+  - Handles rare and clinical terms effectively
+  - Example: “nausea” → [“nau”, “##sea”]
+
+2. **Tokens are mapped to IDs**
+  - Each token corresponds to an index in the model vocabulary
+  - This creates a sequence of integers representing the input text
+  - Example: [“nau”, “##sea”] → [1234, 5678]
+
+3. **Attention masks are created**
+  - Binary mask indicating which tokens are real (1) vs padding (1)
+  - This distinguishes real tokens from padding
+  - Example: [1234, 5678] → attention mask [1, 1, 0, 0, 0] (if `MAX_LENGTH`=5)
+
+4. **Sequences are standardised with padding/truncation**
+  - Tranformer models require fixed-length input sequences
+  - Sequences are truncated if too long or padded if too short to a fixed length (`MAX_LENGTH`)
+  - Example: [1234, 5678] → padded to [1234, 5678, 0, 0, 0] (if `MAX_LENGTH`=5)
+
+---
+
+#### 4.4 Output of Tokenisation
+
+Each input example is transformed into:
+
+| Component | Description |
+|----------|------------|
+| `input_ids` | Sequence of token IDs |
+| `attention_mask` | Binary mask (1 = real token, 0 = padding) |
+
+These are the actual inputs passed to the transformer model.
+
+---
+
+#### 4.5 Design Rationale
+
+This approach is required because:
+
+- Transformers operate on sequential token inputs, not structured columns  
+- Clinical text contains complex terminology, requiring subword tokenisation  
+- The task depends on relationships between entity, task, and context, which must be encoded in a single sequence  
+
+By combining structured fields into text and then tokenising:
+
+- The model can learn contextual dependencies across all inputs
+- Ambiguity is reduced when multiple entities exist in a sentence
+- The input remains compatible with pretrained transformer architecture
+
+---
+
+### 5. Model Architecture
+
+#### 5.1 Overview
+
+This step uses BioClinicalBERT as the base model, selected previously for its domain-specific pretraining on clinical text. Key properties include:
+
+- End-to-end differentiable model  
+- Sequence-level classification using `[CLS]` representation  
+- Fully compatible with the Hugging Face training pipeline  
+
+This section defines the model structure only, training strategy (hyperparameters, optimisation, validation) is handled in subsequent sections.
+
+---
+
+#### 5.2 Architecture Components
+
+The model is instantiated using:
+
+```python
+AutoModelForSequenceClassification.from_pretrained(
+    "emilyalsentzer/Bio_ClinicalBERT",
+    num_labels=2
+)
+```
+
+This class constructs a complete classification model consisting of:
+
+| Component | Role |
+|----------|------|
+| BioClinicalBERT encoder | Generates contextual embeddings from input text |
+| `[CLS]` token representation | Aggregates sequence-level information |
+| Classification head (linear layer) | Maps embedding → binary logits |
+
+---
+
+#### 5.3 Forward Pass
+
+For each input example, the model performs:
+
+1. Tokenised input (`input_ids`, `attention_mask`) is passed to the encoder  
+2. The encoder produces contextual embeddings for all tokens  
+3. The `[CLS]` token embedding is extracted as a representation of the full sequence  
+4. The classification head maps this embedding to logits (2 classes)  
+5. Softmax converts logits into probabilities  
+
+---
+
+#### 5.4 Training Behaviour (Fine-Tuning)
+
+The model is trained via fine-tuning, where pretrained representations are adapted to a task-specific classification objective.
+
+- The BioClinicalBERT encoder is initialised with pretrained weights from clinical text corpora.  
+- The classification head is newly initialised and trained from scratch for binary classification.  
+- Pretraining-specific heads (e.g. masked language modelling, next sentence prediction) are not used.  
+
+During training:
+
+| Component | Learning Behaviour |
+|----------|------------------|
+| BioClinicalBERT encoder | Fine-tuned (weights updated with small task-specific adjustments) |
+| Classification head | Fully trained from random initialisation |
+
+This setup allows the model to:
+
+- Retain general clinical language understanding  
+- Learn task-specific decision boundaries for entity validation  
+
+---
+
+#### 5.5 Learned Function
+The model learns a decision function:
+
+> f(entity + context) → {valid, invalid}
+
+Specifically, it captures:
+
+- Contextual relationships between entity and sentence
+- Task-dependent interpretation of entities
+- Patterns distinguishing valid vs invalid extractions
+
+---
+
+### 6. Training Configuration and Hyperparameters
+
+#### 6.1 Overview
+
+This section defines the configuration and hyperparameters used to train the model.
+
+These settings control:
+- How training is executed (e.g. batching, evaluation, checkpointing)
+- How model weights are updated (e.g. learning rate, epochs)
+- How training stability and performance are managed
+
+Training is implemented using the Hugging Face `Trainer` API, which standardises the training loop and integrates configuration, optimisation, and evaluation into a single framework.
+
+---
+
+#### 6.2 Training Framework
+
+We use Hugging Face's `Trainer` API to simplify the training loop. 
+
+```python
+from transformers import Trainer, TrainingArguments
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    tokenizer=tokenizer,
+    compute_metrics=compute_metrics
+)
+```
+
+The `Trainer` API handles:
+
+- Data loading and batching
+- Device placement (CPU/GPU)
+- Forward and backward passes  
+- Loss computation (`CrossEntropyLoss` for classification)
+- Gradient accumulation and clipping (`max_grad_norm`)  
+- Optimizer and learning rate scheduler updates 
+- Periodic evaluation at defined intervals (`eval_strategy="epoch"`)  
+- Checkpointing and best model selection  
+- Metric computation via `compute_metrics` 
+
+Rationale:
+
+-	Eliminates manual PyTorch training loop implementation
+-	Reduces risk of implementation errors
+-	Ensures consistent handling of training, evaluation, and logging
+-	Integrates directly with Hugging Face datasets and tokenizers
+
+---
+
+#### 6.3 Training Configuration
+
+Training configuration defines the execution behaviour of training, separate from hyperparameters. These settings control evaluation, checkpointing, logging, and how training progress is managed.
+
+| Configuration Setting            | Value        | Purpose / Rationale                                                                 |
+|----------------------------------|-------------|-----------------------------------------------------------------------------------|
+| Evaluation strategy              | "epoch"     | Runs validation at the end of each epoch to track generalisation performance.     |
+| Save strategy                    | "epoch"     | Saves a checkpoint at the end of each epoch for model versioning and recovery.    |
+| Load best model at end           | True        | Ensures the final model is the best-performing checkpoint (not just last epoch).  |
+| Metric for best model            | "f1"        | Selects best checkpoint based on F1-score, balancing precision and recall.        |
+| Logging steps                    | 10          | Logs training metrics every 10 steps for monitoring convergence and stability.    |
+| Save total limit                 | 2           | Retains only the 2 most recent checkpoints to control storage usage.              |
+| Output directory                 | models/bioclinicalbert | Directory where model checkpoints and final model are stored.          |
+
+**Explanation of workflow effects:**
+
+- **Evaluation + checkpointing:** Work together to track performance over time and ensure the best model is preserved rather than simply the final model.
+- **`load_best_model_at_end=True`:** Ensures that training does not depend on the final epoch, which may overfit. Instead, the model with the best validation F1 is used.
+- **Logging (`logging_steps=10`):** Provides visibility into training dynamics (loss trends, instability). Without this, failures (e.g. divergence) are harder to detect.
+
+---
+
+#### 6.4 Key Hyperparameters
+
+Hyperparameters directly control the weight update dynamics during training. These influence how quickly and accurately the model learns.  
+
+| Hyperparameter              | Value  | Purpose / Rationale |
+|-----------------------------|--------|---------------------|
+| Batch size                  | 8      | Number of examples per forward/backward pass. Smaller batch improves stability on small datasets and fits memory constraints. |
+| Gradient accumulation steps | 2      | Accumulates gradients across steps to simulate larger batches without increasing memory usage. |
+| Epochs                      | 5      | Number of full dataset passes. Ensures sufficient learning signal from a small dataset. |
+| Learning rate               | 3e-6   | Small learning rate prevents overwriting pretrained representations during fine-tuning. |
+| Weight decay                | 0.05   | L2 regularisation to reduce overfitting by penalising large weights. |
+| Warmup ratio                | 0.1    | Gradually increases learning rate for first 10% of steps to stabilise early training. |
+| Learning rate scheduler     | linear | Decays learning rate over time to enable smooth convergence. |
+| Max grad norm               | 1.0    | Clips gradients to prevent exploding updates and ensure numerical stability. |
+| Max sequence length         | 512    | Standardises input length via truncation/padding for transformer compatibility. |
+
+**Effective batch size:**
+
+```text
+effective_batch_size = batch_size × gradient_accumulation_steps = 8 × 2 = 16
+```
+
+- With `batch_size=8` and `gradient_accumulation_steps=2`, the effective batch size is 16 (8 examples processed before weights are updated). 
+- This allows for more stable updates while fitting within memory constraints.
+
+**Explanation of choices:**
+
+-	Small batch size and low learning rate are standard for fine-tuning transformers on limited data to avoid instability.
+-	Gradient accumulation improves gradient quality without exceeding hardware limits.
+-	Warmup and scheduler stabilise early training and refine convergence later.
+-	Weight decay and gradient clipping reduce overfitting and prevent unstable updates.
+-	Multiple epochs ensure the model sufficiently learns dataset patterns, with validation controlling overfitting.
+
+---
+
+### 7. Training Loop
+
+#### 7.1 High-Level Overview
+
+Although Trainer abstracts implementation, the underlying training loop follows a standard sequence.
+
+```text
+for epoch:
+    for batch:
+        forward pass → logits
+        compute loss
+        backward pass (accumulate gradients)
+        
+        if accumulation step reached or last batch:
+            clip gradients
+            optimizer step (update weights)
+            scheduler step (update LR)
+            zero gradients
+        
+        log metrics (every logging_steps)
+    
+    evaluate on validation set
+    compute metrics (via compute_metrics on validation predictions)
+    save checkpoint
+    update best model (based on F1)
+```
+
+---
+
+#### 7.2 Batch-Level Training (Per Step)
+
+For each batch:
+
+1. Input tensors (`input_ids`, `attention_mask`) are loaded and moved to device.
+2. **Forward pass:**
+	-	Inputs passed through BioClinicalBERT → contextual embeddings
+	-	[CLS] representation passed to classification head → logits (2 values)
+3. **Loss computation:**
+  - `CrossEntropyLoss` applied to logits and ground-truth labels
+4. **Backward pass:**
+  - Gradients computed via backpropagation
+5. **Gradient accumulation:**
+  - Gradients accumulated over `gradient_accumulation_steps`
+  - Weights updated only after accumulation threshold reached
+  - Delays weight updates to simulate larger batch sizes
+6. **Weight update (conditional):**
+  Performed when accumulation threshold is reached or at final batch:
+  - **Gradient clipping:** Gradients clipped to `max_grad_norm=1.0`
+  - **Optimizer step:** Model weights updated
+  - **Scheduler step:** Learning rate adjusted according to linear schedule
+7. **Logging:**
+	-	Training metrics recorded every `logging_steps`
+  - Used for monitoring convergence, not evaluation
+
+---
+
+#### 7.3 Epoch-Level Operations (per epoch)
+
+After all batches in an epoch:
+
+1. **Validation:**
+  - Model evaluated on validation dataset
+  - Predictions generated (logits → argmax → class labels)
+  - Metrics computed: accuracy, precision, recall, F1-score
+2. **Checkpointing:**
+	-	Model state saved (`save_strategy="epoch"`)
+3. **Best model selection:**
+	-	Current model checkpoint compared using F1-score
+	-	Best-performing model checkpoint retained
+
+---
+
+#### 7.4 Training Duration
+
+Total steps:
+
+```text
+steps_per_epoch = ceil(training_size / batch_size) = ceil(420 / 8) ≈ 53
+total_steps = steps_per_epoch × epochs = 53 × 5 ≈ 265
+```
+
+- Each step processes one batch of `batch_size` examples
+- One epoch = full pass over the dataset
+- Total steps define the number of forward and backward passes
+
+Weight updates:
+
+```text
+updates_per_epoch ≈ ceil(steps_per_epoch / gradient_accumulation_steps)
+                 ≈ ceil(53 / 2) ≈ 27
+```
+
+- Gradients are accumulated across steps
+- Weight updates occur only after `gradient_accumulation_steps` or at the final batch
+- Therefore, the number of weight updates is lower than total steps
+
+End of training:
+
+- `load_best_model_at_end=True` restores the checkpoint with the highest validation F1-score
+-	The final model is selected based on performance, not the last epoch
+
+---
+
+### 8. Validation Strategy (During Training)
+
+#### 8.1 Purpose
+
+Validation monitors the model's ability to generalise to unseen data during training. Unlike final evaluation, validation: 
+
+- Directly informs training decisions by detecting whether learning is proceeding correctly.
+- Enables early stopping or adjustments if necessary.
+- Ensures that the baseline configuration is effective, stable, and sufficient without requiring unnecessary iterations.
+
+Specifically, validation allows you to identify:
+
+- Healthy learning → the model is improving on unseen data  
+- Overfitting → the model memorises training data and fails to generalise  
+- Underfitting → the model is unable to capture meaningful patterns  
+
+It provides a decision-making signal during training on whether the model is learning meaningful patterns or not
+
+---
+
+#### 8.2 Validation Process
+
+Validation is performed automatically at the end of each epoch (`eval_strategy="epoch"`) using the `Training` framework. During validation:
+
+1. The model performs a forward pass on the validation dataset (no gradients are computed in eval mode).  
+2. Logits are generated for each example.  
+3. Predictions are obtained via `argmax(logits)` → predicted class (0 or 1)  
+4. Metrics are computed using `compute_metrics`:
+   - **Accuracy:** proportion of correct predictions  
+   - **Precision:** proportion of predicted positives that are correct  
+   - **Recall:** proportion of true positives correctly predicted  
+   - **F1-score:** harmonic mean of precision and recall 
+
+Key properties:
+
+- Validation data is never used for training
+- Metrics reflect generalisation performance, not training performance
+
+---
+
+#### 8.3 Interpretation of Validation Behaviour
+
+Validation is interpreted by trends across epochs, not single values.
+
+| Pattern | Interpretation | Action |
+|--------|---------------|--------|
+| Training loss ↓, Validation loss ↓, metrics ↑ then plateau | Healthy learning | Continue training or stop when stable |
+| Training loss ↓, Validation loss ↑ | Overfitting | Apply regularisation or stop earlier |
+| Both training and validation performance low | Underfitting | Improve input representation or increase model capacity |
+
+Additional signals:
+
+| Signal | Interpretation |
+|--------|----------------|
+| Metrics ≈ random (~50%) | Model not learning meaningful patterns |
+| Highly unstable metrics | Training instability or insufficient data |
+| Large gap between training and validation | Poor generalisation |
+
+Notes:
+
+- No fixed numeric threshold defines “good” performance  
+- Focus is on consistency, stability, and learning trends 
+
+---
+
+#### 8.4 Role in Model Selection
+
+Validation determines which model checkpoint is ultimately used:
+
+- `metric_for_best_model = "f1"`  
+- `load_best_model_at_end = True`
+
+Process:
+
+1. After each epoch, validation F1-score is computed.  
+2. The best-performing checkpoint is tracked.  
+3. At the end of training, the model with the highest validation F1-score is reloaded.  
+
+Implications:
+
+- The final model is not necessarily from the last epoch  
+- Selection is based on generalisation performance, not training metrics
+
+---
+
+### 9. Cross-Validation (Robustness Assessment)
+
+#### 9.1 Purpose and Role
+
+Cross-validation is used to assess the robustness and reliability of model performance with respect to data splitting. Unlike validation during training (Section 8), which guides learning: 
+
+- Cross-validation is a post-training diagnostic tool, not part of the core training pipeline.
+- Answers whether performance is stable across different subsets of the data, rather than being an artifact of a specific train/validation split.
+  -	Confirms reliability of results
+  -	Quantifies uncertainty in performance
+
+This is critical because:
+
+- The dataset is relatively small (~420 training samples)
+- Model performance can vary depending on which samples are seen during training
+- A single validation split may give an overly optimistic or pessimistic estimate
+
+Role in pipeline:
+
+- Not used for training decisions (hyperparameter tuning, checkpoint selection)
+- Not used for final model selection (still based on standard validation)
+- Used only for evaluation robustness to assess stability and generalisation confidence
+
+Cross-validation is used to validate that this selection is robust, rather than to directly produce the deployed model.
+
+---
+
+#### 9.2 Method: Stratified 5-Fold Cross-Validation
+
+We use Stratified K-Fold Cross-Validation using `StratifiedKFold` with the following configuration:
+
+- `K = 5` folds as a trade-off between:
+  - Reliability (more folds = better estimate)
+  - Computational cost (more folds = more training runs)
+- Stratification based on the binary label (`is_valid`) to ensure:
+  - Each fold maintains a similar class distribution, preventing biased evaluation
+
+Dataset used for CV:
+
+- Entire training dataset: 420 samples
+- The original 90-sample validation set is not used in CV as it is reserved for:
+  - Standard validation during training
+  - Ensuring seperation between training workflow and robustness assessment
+
+Per fold split:
+
+- Training: ~80% → ~336 samples
+- Validation: ~20% → ~84 samples
+
+| Fold | Training Samples | Validation Samples |
+|------|-----------------|------------------|
+| 1    | ~336            | ~84              |
+| 2    | ~336            | ~84              |
+| 3    | ~336            | ~84              |
+| 4    | ~336            | ~84              |
+| 5    | ~336            | ~84              |
+
+Each sample appears:
+- In validation exactly once (1/5)
+- In training four times (4/5)
+
+This produces 5 independent training runs, each evaluated on a different subset of the data.
+
+---
+
+#### 9.3 Implementation Logic
+
+For each fold the following steps are performed:
+
+```text
+for fold in K:
+    split data into train_fold (80%) and val_fold (20%) using stratification
+
+    initialise new model (reset weights)
+
+    train model on train_fold
+    evaluate model on val_fold
+
+    store metrics
+```
+
+Key implementation details:
+
+- **Model reset per fold:** A fresh model is created using `deepcopy(model)` to avoid weight leakage across folds
+- **Identical training configuration:** All folds use the same hyperparameters and training setup
+- **Independent runs:** Each fold is a fully independent training + validation cycle
+- **Same metric computation:** Accuracy, precision, recall, and F1-score are computed using the same `compute_metrics` function
+
+---
+
+#### 9.4 Metrics Aggregation
+
+After all folds are completed:
+
+- Metrics are aggregated across folds
+- For each metric, we compute:
+	-	Mean → expected performance
+	-	Standard deviation → variability across splits
+
+Interpretation:
+
+- **Mean performance** → Represents the average expected generalisation performance
+- **Standard deviation** → Measures sensitivity to data splitting
+	- Low std = stable model
+	- High std = high variance / instability
+
+No interpretation of results is performed in this section; analysis is deferred to Section 10.
+
+---
+
+### 10. Iterative Training and Empirical Analysis
+
+#### 10.1 Overview
+
+This section documents the iterative training process, including configuration changes, observed behaviour, and resulting performance. The objective is to:
+
+- Identify a stable and effective training configuration  
+- Maximise F1-score (primary metric)  
+- Determine whether performance is limited by model design or dataset characteristics  
+
+Each phase represents a controlled change to either input representation or training configuration, followed by empirical evaluation.
+
+---
+
+#### 10.2 First Training Run: Pipeline Sanity Check
+
+**Input:**  
+- `sentence_text` only  
+
+**Purpose:**
+- Verify end-to-end pipeline functionality (data → tokenisation → model → metrics)  
+- Establish a baseline for debugging  
+
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Accuracy | 0.511 |
+| F1 | 0.676 |
+| Precision | 0.511 |
+| Recall | 1.0 |
+| Loss | ~0.717 |
+
+**Interpretation:**
+- Model predicts all samples as positive (recall = 1.0)  
+- No discriminative ability (precision = 0.511)
+- F1 artificially inflated due to class imbalance  
+
+**Conclusion:**  
+- Pipeline is functional, but input is insufficient for learning. 
+- This configuration is not valid for the task.
+
+---
+
+#### 10.3 Second Training Run: Full Input Representation
+
+**Input:**  
+- `task + concept + entity_type + entity_text + sentence_text`
+
+**Rationale:**
+- Provide maximum contextual and structured information  
+- Expected to improve performance by reducing ambiguity and providing clear signals for classification
+
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Accuracy | 0.511 |
+| F1 | 0.676 |
+| Precision | 0.511 |
+| Recall | 1.0 |
+| Loss | ~0.692 |
+
+**Observed Issues:**
+- Exploding gradients (`loss = NaN`)
+- Training instability (loss diverging, metrics fluctuating wildly)
+- Failure to converge (metrics do not improve, loss does not decrease)
+
+**Interpretation:**
+- Input complexity increased gradient instability  
+- Default learning rate too high for this input complexity  
+
+**Conclusion:**  
+- Model cannot train reliably with default hyperparameters on full input without stabilisation.
+
+---
+
+#### 10.4 Third Training Run: Hyperparameter Stabilisation (Best Configuration)
+
+**Changes and Rationale:**
+1. **Learning rate:** `2e-5 → 5e-6`  
+  - Lower LR = smaller weight updates, more stable convergence
+  - Prevents overshooting minima
+  - Critical for stability on small dataset
+2. **Batch size:** `16 → 8`  
+  - Smaller batches → less noisy updates
+  - More stable gradients for small datasets
+3. **Gradient clipping:** `max_grad_norm = 1.0`
+  - Capping gradient magnitude prevents exploding gradients
+  - Ensures numerical stability during training  
+
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Accuracy | 0.733 |
+| F1 | 0.75 |
+| Precision | 0.72 |
+| Recall | 0.783 |
+| Loss | 0.645–0.658 |
+
+**Interpretation:**
+- Stable convergence achieved (loss decreases, metrics improve consistently)
+- Balanced precision–recall trade-off  
+- Meaningful pattern learning  
+
+**Conclusion:**  
+- This is the best-performing configuration and establishes the baseline.
+- However, further tuning is explored as metrics in the mid 70's still leaves room for improvement.
+
+---
+
+#### 10.5 Fourth Training Run: Simplified Input
+
+**Changes:**
+- Removed `entity_type` and `concept`  
+- Input: `task + entity_text + sentence_text`
+
+**Rationale:**
+- Reduce redundancy and noise  
+- Aligns better with natural language structure
+- Simpler input may lead to better generalisation
+
+**Results:**
+
+| Metric | Range |
+|--------|-------|
+| Accuracy | 0.644–0.667 |
+| F1 | 0.686–0.714 |
+| Precision | 0.606–0.654 |
+| Recall | 0.739–0.870 |
+
+**Interpretation:**
+- Slight performance drop across all metrics
+- Precision dropped → reduced discriminative ability  
+
+**Conclusion:**  
+- Structured features contribute meaningful signal which is lost in simplification. 
+- Simplification reduces performance.
+- Relevant features should be retained for best performance, even if they introduce some complexity.
+
+---
+
+#### 10.6 Fifth Training Run: Advanced Tuning and Partial Freezing
+
+**Changes and Rationale:**
+1. **Epochs:** `3 → 5` 
+  - More epochs allow for more learning signal, especially with a small dataset. 
+  - Prevents underfitting by giving the model more time to learn patterns.
+  - Risks overfitting on a small dataset, but this is mitigated by other regularisation techniques.
+2. **Learning rate:** `5e-6 → 3e-6`  
+  - Even smaller learning rate allows for finer adjustments to weights, which can improve performance on a small dataset.
+  - Slower but more precise convergence, potentially leading to better minima.
+3. **Weight decay:** `0.01 → 0.05`  
+  - Stronger L2 regularisation to combat overfitting, especially with more epochs.
+  - Penalises large weights more heavily, encouraging simpler models that generalise better.
+4. **Gradient accumulation:** `2` 
+  - Stimulates larger effective batch size (16)
+  - More stable updates without increasing memory usage. 
+5. **Warmup ratio:** `0.1` with linear scheduler 
+  - Gradually increases learning rate at the start of training to stabilise early updates.
+  - Prevents divergence in the initial phase when weights are most sensitive. 
+6. **Partial BERT freezing**  
+  - Freeze lower layers of BioClinicalBERT to retain general language understanding.
+  - Only fine-tune higher layers and classification head to adapt to the specific task.
+  - Reduces risk of catastrophic forgetting of pretrained knowledge while still allowing task adaptation.
+
+**Overall Rationale:**
+- Improve generalisation and stability  
+- Reduce overfitting risk  
+
+**Results:**
+
+| Metric | Range |
+|--------|-------|
+| Accuracy | 0.577–0.600 |
+| F1 | 0.672–0.705 |
+| Precision | 0.557–0.566 |
+| Recall | 0.848–0.957 |
+
+**Interpretation:**
+- Recall increased significantly  
+- Precision decreased → more false positives  
+- Overall F1 worse than baseline  
+
+**Conclusion:**  
+- Additional complexity degraded performance → Dataset too small for complex tuning to be effective.
+- Freezing may have limited the model's learning capacity for this specific task, preventing it from adapting to the nuances of entity validation.
+- Model became under-adaptive and over-regularised.
+
+---
+
+#### 10.7 Sixth Training Run: Stratified Cross-Validation
+
+**Changes:**
+- Removed freezing 
+- Retained advanced hyperparameters  
+- Applied 5-fold stratified cross-validation 
+
+**Rationale:**
+- Removed freezing as it did not improve performance
+- Assess robustness and stability of performance across different data splits
+- Confirm that results are not an artifact of a specific train/validation split
+
+**Results:**
+
+| Fold | Accuracy | F1 | Precision | Recall |
+|------|----------|----|-----------|--------|
+| 1 | 0.643 | 0.700 | 0.603 | 0.833 |
+| 2 | 0.667 | 0.725 | 0.627 | 0.860 |
+| 3 | 0.690 | 0.745 | 0.644 | 0.884 |
+| 4 | 0.595 | 0.646 | 0.585 | 0.721 |
+| 5 | 0.631 | 0.680 | 0.611 | 0.767 |
+
+**Aggregated Metrics:**
+
+| Metric | Mean | Std |
+|--------|------|-----|
+| Accuracy | 0.645 | ±0.036 |
+| F1 | 0.699 | ±0.039 |
+| Precision | 0.614 | ±0.023 |
+| Recall | 0.813 | ±0.067 |
+
+**Observations:**
+
+- Moderate average performance  
+- Noticeable variance across folds  
+- No improvement over Phase 2 baseline  
+
+**Interpretation:**
+
+1. **Performance instability**  
+  - Metrics vary across folds  
+  - Model sensitive to training data selection  
+2. **No benefit from additional tuning**  
+  - Advanced configuration does not outperform simpler baseline  
+3. **Generalisation uncertainty**  
+  - Variance indicates unreliable performance on unseen data  
+
+---
+
+#### 10.8 Global Interpretation
+
+Across all phases:
+
+- Best performance achieved early in the third training run (F1 = 0.75)
+- Subsequent tuning did not improve results  
+- Cross-validation confirms variability and instability  
+
+Evidence indicates:
+
+- Model capacity is sufficient  
+- Input representation is adequate  
+- Training procedure is stable  
+
+However:
+
+- Performance does not consistently generalise  
+- Results depend on specific data splits  
+
+---
+
+#### 10.9 Final Conclusion and Decision
+
+All empirical evidence converges on a single constraint, the dataset size is the primary limiting factor for performance rather than model architecture or hyperparameter configuration.
+
+Supporting evidence:
+
+- No improvement from hyperparameter tuning  
+- Increased variance in cross-validation  
+- Degradation with added complexity  
+- Stable but limited performance ceiling (~F1 = 0.75)  
+
+Conclusion:
+
+- The model is not underpowered  
+- The training setup is not flawed  
+- The dataset is insufficient to support further learning  
+
+We must stop further training iterations and hyperparameter tuning:
+
+- No observed performance gains  
+- Increased risk of overfitting 
+- Diminishing returns from further adjustments 
+
+---
+
+#### 10.10 Next Steps
+
+Increase the dataset size to enable further learning and performance improvements:
+
+- Expand annotated dataset from ~600 → 1200 samples  
+- Maintain the highest scoring configuration (third training run)
+- Retrain without introducing additional complexity (additional hyperparameters are not justified by current evidence)
+
+For future iterations training and scaling should stop when:
+
+- F1-score plateaus despite additional data  
+- Cross-validation variance decreases  
+- Precision improves without recall collapse  
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1455,432 +2425,3 @@ INTERVENTION
 Moderate improvement (complexity in temporality and intent)
 CLINICAL_CONDITION
 Largest improvement (highest complexity, weakest baseline)
-
----
-
-In your context:
-	•	“Training” = fine-tuning a pretrained model
-	•	You are not training from scratch
-	•	You are updating weights of an existing model for a new task
-
-Training
-The process you run (epochs, batches, updates)
-Fine-tuning
-The type of training (starting from pretrained weights)
-
-
-You are training the model, and that training is specifically fine-tuning.
-
-Validation is not evaluation — it is decision-making during training.
-
-It answers:
-
-“Is the model learning properly, or is something wrong?”
-
-You use validation to detect:
-
-A. Healthy training
-	•	Validation loss ↓ over epochs
-	•	Metrics ↑ then plateau
-
-→ Good → stop training
-
-⸻
-
-B. Overfitting
-	•	Training loss ↓
-	•	Validation loss ↑
-
-→ Model memorising → stop earlier or regularise
-
-⸻
-
-C. Underfitting
-	•	Both train + validation performance low
-
-→ Model not learning → change setup
-
-⸻
-
-4. How do you know if performance is “bad”?
-
-You do NOT need a fixed numeric threshold yet.
-
-Instead, you look for patterns:
-
-Good enough (for your project scope)
-	•	Stable validation metrics
-	•	No divergence
-	•	Clear learning signal
-
-Problematic signals
-	•	Validation performance near random (~50%)
-	•	Highly unstable across epochs
-	•	Strong mismatch between tasks
-
-⸻
-
-5. Do you need iterative improvements?
-
-Short answer: No — not by default
-
-Your pipeline is already:
-	•	Clean
-	•	Balanced
-	•	Well-labelled
-	•	Stratified
-
-So:
-
-A single well-designed baseline run is usually sufficient.
-
-⸻
-
-6. Then why do people talk about “iterations”?
-
-Because in real ML workflows:
-	•	First model often has issues
-	•	Data may be messy
-	•	Splits may be biased
-
-But in your case:
-	•	You already fixed those upstream
-	•	You are not experimenting blindly
-
-⸻
-
-7. What should YOU actually do?
-
-Step 1 — Build a strong baseline (this is your priority)
-Do it properly:
-	•	BioClinicalBERT
-	•	Sentence input
-	•	Clean tokenization
-	•	Proper training setup
-	•	Validation monitoring
-
-That alone is already a strong system
-
-⸻
-
-Step 2 — Check validation behaviour
-After training, ask:
-	•	Did validation improve?
-	•	Did it stabilise?
-	•	Any obvious issues?
-
-⸻
-
-Step 3 — Only iterate if needed
-You only change things if:
-
-Problem
-Action
-Underfitting
-Increase epochs / improve input
-Overfitting
-Early stopping / regularisation
-Confusion across tasks
-Add task prefix
-Entity ambiguity
-Add entity markers
-
-If none of these appear:
-
-You stop. No iteration needed.
-
-⸻
-
-8. Can you “just make the baseline as good as possible from the start”?
-
-Yes — and that is exactly what you should do.
-
-Best approach:
-	•	Include entity markers from the start
-	•	Use proper hyperparameters
-	•	Use validation correctly
-
-That reduces the need for later changes.
-
-⸻
-
-9. About the “improvement layer” I mentioned earlier
-
-That is optional, not required.
-
-Think of it like:
-	•	Baseline (required) → your actual system
-	•	Improvements (optional) → only if baseline fails
-
-You do NOT need to artificially create iterations just to say you did.
-
-⸻
-
-10. What you should NOT do
-	•	Do NOT tweak endlessly without reason
-	•	Do NOT use test set to guide decisions
-	•	Do NOT over-engineer before seeing results
-
-You asked:
-
-“How do we know if we need to fine-tune more?”
-
-Answer:
-
-You already are fine-tuning.
-
-The real question is:
-
-“Do we need to change the setup?”
-
-And the answer is:
-	•	Only if validation behaviour shows a problem
-	•	Otherwise → baseline is sufficient
-
-
-2. The real decision you must make
-
-You only need to decide:
-
-What input format does your ONE model use?
-
-There are only two valid options:
-
-Option A — Sentence only (simple baseline)
-Pros:
-	•	Standard
-	•	Simple
-	•	Easy to implement
-	•	Works reasonably well
-
-Cons:
-	•	Model must infer entity + task implicitly
-
-
-
-⸻
-
-Option B — Structured input (your idea)
-"[TASK: symptom_presence] [ENTITY: chest pain] Patient denies chest pain"
-
-Pros:
-	•	Explicit signal
-	•	Better disambiguation
-	•	Stronger performance in edge cases
-
-Cons:
-	•	Slightly more implementation effort
-
-  ---
-
-Start directly with:
-
-Structured input (Option B)
-
-This aligns with:
-	•	your original intuition
-	•	your dataset design
-	•	your need for precision
-
-⸻
-
-5. Why this is the correct choice
-
-Because your task is NOT generic NLP.
-
-You are doing:
-
-entity-level validation within a sentence
-
-Without entity awareness, the model must guess:
-	•	which part of sentence matters
-	•	what task applies
-
-That is unnecessary difficulty.
-
-⸻
-
-6. Why your earlier concern was valid
-
-You said:
-
-“It makes no sense to only use sentence text”
-
-That is partially correct for your task specifically, because:
-	•	multiple entities can exist in one sentence
-	•	task type changes interpretation
-	•	clinical text is dense and ambiguous
-
-So adding structure is justified.
-
-format a structured input then feed into tokeniser. 
-
----
-
-What happens to columns - for model training
-
-
-Column
-Use
-sentence_text
-core input
-entity_text
-explicitly injected
-task
-explicitly injected
-concept
-ignore (noisy)
-section
-optional (not needed)
-negated
-DO NOT include (label leakage risk)
-
-
-
-
-
-
-
-
-
-
-
-	•	Training size = 420 examples
-	•	Batch size = 16
-	•	Epochs = 3
-
-Steps per epoch = ceil(420 / 16) ≈ 27 steps.
-	•	Each step → model sees 16 examples and updates weights once.
-	•	One epoch → model sees all 420 examples once.
-	•	Total steps = steps per epoch × num_epochs = 27 × 3 ≈ 81 steps.
-	•	Logging every 10 steps → you’ll see 8 log entries over 3 epochs.
-
-
-
-
-
-
-Some weights of BertForSequenceClassification were not initialized from the model checkpoint at emilyalsentzer/Bio_ClinicalBERT and are newly initialized: ['classifier.bias', 'classifier.weight']
-
-Bio_ClinicalBERT was loaded with several pretrained weights not relevant to our binary classification task (MLM and NSP heads). These were ignored. The classification head weights were newly initialized and trained on our dataset, as intended.
-
-
-
-
-# Iterative Training Documentation - Hybrid Clinical Notes Extraction
-
-## Overview
-This document captures the iterative changes made during model training, key decisions, and resulting metrics. The goal is to stabilize training, improve accuracy/F1, and prevent overfitting.
-
----
-
-## Phase 0: Baseline pipeline check
-- **Input:** Only `sentence_text`  
-- **Purpose:** Verify the pipeline runs; no meaningful learning expected.  
-- **Observations:** Training unstable (`grad_norm=nan`), accuracy at chance (~51%), F1 moderate (0.676) due to extreme class imbalance.  
-
-| Metric | Value |
-|--------|-------|
-| Eval Accuracy | 0.511 |
-| Eval F1 | 0.676 |
-| Eval Precision | 0.511 |
-| Eval Recall | 1.0 |
-| Loss | ~0.717 |
-
-**Conclusion:** Model cannot learn task without full context. Serves only as sanity check.
-
----
-
-## Phase 1: Original full input
-- **Input:** `task + concept + entity_type + entity_text + sentence_text`  
-- **Problem:** Exploding gradients, training unstable, learning failed (~50% accuracy).  
-
-| Metric | Value |
-|--------|-------|
-| Eval Accuracy | 0.511 |
-| Eval F1 | 0.676 |
-| Eval Precision | 0.511 |
-| Eval Recall | 1.0 |
-| Loss | ~0.692 |
-
-**Conclusion:** Too many input features caused instability. Training failed; adjustments required.
-
----
-
-## Phase 2: Hyperparameter adjustments
-- **Changes:**  
-  - Learning rate reduced: 2e-5 → 5e-6  
-  - Gradient clipping: max_grad_norm=1.0  
-  - Batch size reduced: 16 → 8  
-
-- **Result:** Stable training, no exploding gradients, improved metrics.  
-
-| Metric | Value |
-|--------|-------|
-| Eval Accuracy | 0.733 |
-| Eval F1 | 0.75 |
-| Eval Precision | 0.72 |
-| Eval Recall | 0.783 |
-| Loss | 0.645–0.658 |
-
-**Conclusion:** Proper hyperparameter tuning resolved exploding gradients and improved learning. This became the new baseline.
-
----
-
-## Phase 3: Simplified input
-- **Changes:** Removed `entity_type` + `concept` to simplify input: `task + entity_text + sentence_text`  
-- **Purpose:** Reduce complexity; input better aligned with Bio_ClinicalBERT pretraining.  
-- **Result:** Metrics slightly decreased.  
-
-| Metric | Value |
-|--------|-------|
-| Eval Accuracy | 0.644–0.667 |
-| Eval F1 | 0.686–0.714 |
-| Eval Precision | 0.606–0.654 |
-| Eval Recall | 0.739–0.870 |
-| Loss | 0.630–0.662 |
-
-**Analysis:** Removing features reduced noise but also removed useful context, causing small metric drop. Training stable.
-
----
-
-## Key Insights
-1. **Gradient issues**: Resolved by lowering LR, gradient clipping, and smaller batch size.  
-2. **Input complexity**: Too many concatenated fields cause instability; too few reduces performance.  
-3. **Dataset size**: Small dataset (~420 training examples) makes the model sensitive to input changes.  
-4. **Iterative process**: Documenting each change allows understanding impact on metrics and training stability.
-
----
-
-## Next Steps
-1. **Hybrid input:** Keep `task + entity_text + sentence_text`, optionally add only the most informative features (e.g., `entity_type`).  
-2. **Classifier head fine-tuning:** Freeze BERT layers for initial epochs to prevent overfitting.  
-3. **Data augmentation:** Use paraphrasing, entity swapping, or synonym replacement to expand training examples.  
-4. **Cross-validation:** Implement k-fold validation to ensure robust performance evaluation.  
-5. **Metric tracking:** Maintain concise log tables for each iteration.
-
-
-
-
-
-
-1. **Dataset Columns Expanded**
-   - Original: `["sentence_text", "entity_text", "task", "label"]`
-   - Updated: `["sentence_text", "entity_type", "entity_text", "concept", "task", "label"]`
-   - This allows the model to learn from more contextual information.
-
-2. **Training Parameters**
-   - Epochs: 3 → 5
-   - Learning rate: 5e-6 → 3e-6
-   - Weight decay: 0.01 → 0.05
-   - Added gradient accumulation: `gradient_accumulation_steps=2`
-   - Added `warmup_ratio=0.1` and `lr_scheduler_type="linear"`
-
-3. **BERT Layers Frozen**
-   - `model.bert.parameters()` set `requires_grad = False`
-   - Unfreeze top 2 encoder layers for task-specific fine-tuning:
-     - `model.bert.encoder.layer[-2:].parameters()` set `param.requires_grad = True`
-   - Only `model.classifier.parameters()` trainable
-   
-   - Freezing most layers keeps pretrained knowledge and prevents overfitting.
-   - Unfreezing the top layers allows the model to adjust higher-level features for your specific task, which usually improves F1/accuracy slightly.
