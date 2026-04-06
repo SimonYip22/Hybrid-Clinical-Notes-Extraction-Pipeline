@@ -2497,6 +2497,15 @@ The final training workflow is implemented in `train_validate_transformer.py`. T
 
 ---
 
+## Data Expansion
+
+### 1. Objective
+
+The objective of data expansion is to increase the size of the annotated dataset from 600 samples to 1200 samples, manualy annotate another 600 samples, resplit the updated dataset into training and validation and evaluation sets (80/10/10), and retrain the model using the best-performing configuration identified in the previous section.
+
+The previous section identified through training that the bottleneck was not hyeprparaemter tuning but instead the dataset size. The model was able to learn meaningful patterns and achieve a reasonable F1-score, but performance was unstable and did not generalise well due to the limited number of training samples.
+
+This section therefore focuses on expanding the dataset to provide more learning signal for the model, which is expected to lead to improved performance and stability, and be teh final iteration of the model training process before final evaluation on the test set.
 
 
 
