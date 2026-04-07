@@ -2570,10 +2570,39 @@ The critical new addition when sampling is the addition of filtering logic for d
   efficient membership testing.
 - This approach ensures that any entity-context combination already present in the previous sample is excluded from the new dataset, regardless of row index or repeated occurrences.
 
+Due to the nature of this deduplication, it will deduplicate any rows which match those 5 columns, meaning that repeated entities in a sentence are treated as duplicates. this is becayse the trasnformer does not get access to the indexes anyways so essentially when training those are duplicates
 
+Therefore it will be expected that there will be >600 rows removed from the dataset since some of the entities in the 600 sampled entities will correspond to more than 1 row in the dataset based on the match to the 5 columns as we dont include the other columns such as the indexes for thr specific entity, so repeated entities at different index position in a senetnce will be essentially treated as the same
 
+This is fine though as it still aligns with what the trasnformer sees, and also is technically better therefore, since it means that the new sampled entities will always be completely unique and not be considered duplicates by the trasnformer.
 
+---
 
+#### 3.3 Sampling Workflow
+
+The logic is implemented in sample_additional_entities.py and follows these steps:
+
+1. Load extraction candidates from `extraction_candidates.jsonl` into a pandas DataFrame.  
+2. Load existing annotated sample from `annotation_sample_raw.csv` for deduplication.  
+3. **Filter out duplicates**:
+   - Create a tuple representation for each row in the new DataFrame (`df_tuples`).  
+   - Convert existing sample rows into a set (`existing_tuples`) for fast membership lookup.  
+   - Apply a boolean mask to remove any rows in `df_tuples` that exist in `existing_tuples`.  
+4. **Stratified sampling**:
+   - For each entity type (`SYMPTOM`, `INTERVENTION`, `CLINICAL_CONDITION`), sample 200 entities from the filtered DataFrame.
+5. **Shuffle and add annotation column**:
+   - Shuffle the combined dataset to mix entity types.  
+   - Add an empty `is_valid` column for manual annotation.
+6. **Save outputs**:
+   - Raw sample: `additional_annotation_sample_raw.csv` (overwritten each run).  
+   - Annotated copy: `additional_annotation_sample_labeled.csv` (preserved if exists).  
+
+Terminal valdiation shows:
+- Loaded 47,487 total entities
+- retained 46,674 entities 
+- Final sample size of 600 entities
+
+This shows that the deduplication worked, where 813 rows were removed, which is expected as there is most likelymultiple appearneces of the entities from the rpevious sample in the full extraction
 
 
 
