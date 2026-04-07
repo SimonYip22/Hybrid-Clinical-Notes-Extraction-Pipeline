@@ -2533,33 +2533,21 @@ This approach follows standard machine learning practice, where dataset size is 
 
 ---
 
-### 3. Sampling Additional Data and Manual Annotation
+### 3. Sampling Additional Data
 
 #### 3.1 Objective
 
 - Generate a new, balanced, annotation-ready dataset of extracted clinical entities for transformer validation, while avoiding overlap with the previously sampled dataset.  
-- Manually annotate the new dataset with binary labels (`is_valid`) indicating whether each entity is a valid extraction in its context, following the same annotation guidelines as before.
 
 ---
 
-#### 3.2 Sampling, Annotation, and Validation Strategy
+#### 3.2 Deduplication Strategy
 
 Sampling strategy is exactly the same as before, with the following key steps:
 
 1. Sample by `entity_type` to ensure class balance across SYMPTOM, INTERVENTION, and CLINICAL_CONDITION
 2. Concatenate the 3 entity types together to form a single dataset of 600 samples (200 per entity type)
 3. Randomly shuffle the dataset with a fixed seed for reproducibility
-
-Annotation Strategy remains consistent with the previous process:
-
-- Each new entity is assigned an empty `is_valid` column for subsequent manual labeling.
-- The same annotation event-based and status-based guidelines per entity type are applied to ensure consistency in labeling criteria across both datasets.
-
-Validation of the new annotated dataset will be the same as before, printing metrics to make sure sampling, annotation labels, and class balance are all correct before proceeding to model training.
-
----
-
-#### 3.3 Deduplication Strategy
 
 The critical new addition when sampling is the addition of filtering logic for deduplication. To prevent duplicates between the new sample and the previous 600 annotated entities:
 
@@ -2582,20 +2570,11 @@ This is fine though as it still aligns with what the trasnformer sees, and also 
 
 The logic is implemented in sample_additional_entities.py and follows these steps:
 
-1. Load extraction candidates from `extraction_candidates.jsonl` into a pandas DataFrame.  
-2. Load existing annotated sample from `annotation_sample_raw.csv` for deduplication.  
-3. **Filter out duplicates**:
-   - Create a tuple representation for each row in the new DataFrame (`df_tuples`).  
-   - Convert existing sample rows into a set (`existing_tuples`) for fast membership lookup.  
-   - Apply a boolean mask to remove any rows in `df_tuples` that exist in `existing_tuples`.  
-4. **Stratified sampling**:
-   - For each entity type (`SYMPTOM`, `INTERVENTION`, `CLINICAL_CONDITION`), sample 200 entities from the filtered DataFrame.
-5. **Shuffle and add annotation column**:
-   - Shuffle the combined dataset to mix entity types.  
-   - Add an empty `is_valid` column for manual annotation.
-6. **Save outputs**:
-   - Raw sample: `additional_annotation_sample_raw.csv` (overwritten each run).  
-   - Annotated copy: `additional_annotation_sample_labeled.csv` (preserved if exists).  
+
+
+---
+
+#### 3.4 Sampling Results
 
 Terminal valdiation shows:
 - Loaded 47,487 total entities
@@ -2603,6 +2582,61 @@ Terminal valdiation shows:
 - Final sample size of 600 entities
 
 This shows that the deduplication worked, where 813 rows were removed, which is expected as there is most likelymultiple appearneces of the entities from the rpevious sample in the full extraction
+
+---
+
+### 4. Manual Annotation and Validation 
+
+#### 4.1 Objective
+
+- Manually annotate the new dataset with binary labels (`is_valid`) indicating whether each entity is a valid extraction in its context, following the same annotation guidelines as before.
+- Validate the new annotated dataset to ensure label quality, class balance, and consistency with the previous dataset before retraining the model.
+
+#### 4.1 Annotation and Validation Strategy
+
+Annotation Strategy remains consistent with the previous process:
+
+- Each new entity is assigned an empty `is_valid` column for subsequent manual labeling.
+- The same annotation event-based and status-based guidelines per entity type are applied to ensure consistency in labeling criteria across both datasets.
+
+Validation of the new annotated dataset will be the same as before, printing metrics to make sure sampling, annotation labels, and class balance are all correct before proceeding to model training.
+
+---
+
+#### 4.2 Validation Workflow
+
+
+---
+
+#### 4.3 Validation Results
+
+
+---
+
+### 5. Stratified Resplitting
+
+---
+
+#### 5.1 Objective
+
+- Resplit the combined dataset of 1200 annotated entities into training, validation, and evaluation sets with an 80/10/10 split, ensuring stratification by `entity_type` to maintain class balance across all sets.
+- This resplitting is necessary to incorporate the new annotated entities into the training process while still retaining a separate validation set for model selection and a final evaluation set for unbiased performance assessment.
+- This is the final stage before we retrain the model using the best-performing configuration identified in the previous section.
+
+#### 5.2 Dataset Combination
+
+
+#### 5.2 Resplitting Workflow
+
+
+---
+
+#### 5.3 Resplitting Results
+
+
+----
+
+## Model Retraining
 
 
 
