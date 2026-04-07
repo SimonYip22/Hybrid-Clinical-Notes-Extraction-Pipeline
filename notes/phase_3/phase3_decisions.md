@@ -2511,6 +2511,25 @@ This section therefore focuses on expanding the dataset to provide more learning
 
 
 
+### 2. Dataset Expansion Rationale
+
+The decision to increase the dataset size from 600 to 1200 samples is based on empirical observations from model performance and variance analysis.
+
+Cross-validation results demonstrated:
+	•	Moderate performance (F1 ≈ 0.75)
+	•	High variability across folds (±0.04)
+
+This indicates the model is operating in a data-limited regime, where performance is constrained by insufficient training data rather than model capacity or optimisation.
+
+In such settings, generalisation error and variance scale approximately with 1/\sqrt{N}, meaning that increasing dataset size reduces variance and improves stability.
+
+Doubling the dataset from 600 to 1200:
+	•	Reduces expected variance by ~29%
+	•	Provides sufficient additional signal to improve generalisation
+	•	Represents the smallest increase likely to produce a measurable effect
+
+This approach follows standard machine learning practice, where dataset size is increased incrementally and performance is reassessed after each scaling step.
+
 
 
 
