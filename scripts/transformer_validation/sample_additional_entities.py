@@ -4,7 +4,7 @@ sample_additional_entities.py
 Purpose:
     - Generate an additional, non-overlapping annotation dataset of clinical entity extractions.
     - Extend the existing annotated dataset (e.g. 600 samples → 1200 total) without duplicating previously sampled rows.
-    - Preserve balanced sampling across entity types while ensuring all new samples are unique relative to prior annotations.
+    - Enforce balanced sampling across entity types while ensuring all new samples are unique relative to prior annotations.
 
 Workflow:
     1. Load extraction candidates from JSONL file (1 line = 1 entity).
@@ -46,12 +46,13 @@ Outputs:
         - Created only if it does not already exist
 
 Notes:
-    - This script extends the original sampling process by introducing a filtering step
-      to explicitly remove previously sampled rows before re-sampling.
+    - This script extends the original sampling process by introducing a pre-filtering step that 
+      removes previously sampled rows before stratified sampling.
     - Deduplication is performed using a multi-column match:
         sentence_text + entity_text + entity_type + concept + task
     - Tuple-based comparison is used to enable row-level equality checking across multiple columns:
-        - `df_tuples`: a row-aligned pandas Series of tuples used to generate the boolean filtering mask
+        - `df_tuples`: a pandas Series where each row is represented as a tuple of deduplication fields
+          used to generate the boolean filtering mask
         - `existing_tuples`: a set used as a lookup structure for efficient membership testing
     - Sampling logic (class balance, random seed, shuffle) is identical to the original script,
       ensuring consistency across datasets.
