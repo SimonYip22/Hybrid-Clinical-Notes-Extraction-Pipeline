@@ -5,4 +5,5 @@ __pycache__/
 data/raw/
 data/processed/
 models/
-README.md
+
+z_ignore/
