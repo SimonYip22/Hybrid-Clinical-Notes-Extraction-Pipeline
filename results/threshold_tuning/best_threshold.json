@@ -1,0 +1,11 @@
+{
+  "best_threshold": 0.549,
+  "best_precision": 0.7242152466367713,
+  "best_recall": 0.6333333333333333,
+  "best_f1": 0.6757322175732218,
+  "baseline_f1": 0.703232125367287,
+  "baseline_precision": 0.7025440313111546,
+  "baseline_recall": 0.703921568627451,
+  "recall_min": 0.5983333333333334,
+  "method": "precision-max under recall constraint"
+}
