@@ -71,7 +71,7 @@ rows = []
 for t in thresholds:
     y_pred = (y_prob >= t).astype(int)
 
-    precision = precision_score(y_true, y_pred, zero_division=0)
+    precision = precision_score(y_true, y_pred, zero_division=0) # Handle edge case where no positive predictions → precision=0
     recall = recall_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred)
 
