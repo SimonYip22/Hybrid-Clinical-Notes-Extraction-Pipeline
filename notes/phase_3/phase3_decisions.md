@@ -3522,95 +3522,438 @@ These outputs are therefore suitable for selecting an optimal decision threshold
 
 ---
 
-### 5. Threshold Tuning: Design and Rationale
+### 5. Threshold Tuning Overview
 	
-#### 5.1 Overview
+#### 5.1 Conceptual Understanding
 
-#### 5.2 Rationale
+Threshold tuning is the process of converting model probability outputs into binary decisions by selecting a decision boundary (threshold).
 
-#### 5.3 Metric Optimisation Decisions
+- In binary classification, the model outputs a probability: `p(y = 1)`
+- A threshold `t ∈ [0, 1]` is applied such that:
+  - `ŷ = 1` if `p ≥ t`
+  - `ŷ = 0` if `p < t`
 
-maximise F1
+Changing the threshold directly controls the trade-off between:
 
-Meaning:
-	•	Balanced trade-off
-	•	No manual tuning
-	•	No arbitrary choices
+- **Precision**: proportion of predicted positives that are correct  
+- **Recall**: proportion of true positives that are recovered  
 
-vs
+How threshold tuning interacts with the model:
 
-maximise precision subject to recall
+- Performed on out-of-fold (OOF) predictions from cross-validation  
+- Ensures all probabilities are out-of-sample, avoiding bias  
+- Does not change the model, only how outputs are converted into decisions  
+- Therefore a post-training decision policy, not a training step 
 
-Meaning:
-	•	“I prioritise precision”
-	•	“But I refuse to let recall drop below X”
+Position in the pipeline:
 
-Given your goal:
+- Occurs after rule-based extraction (high recall)
+- Occurs before final model training and dataset construction
+- Controls how strictly the transformer filters candidate entities
 
-“precision-first pipeline”
-
-You should use:
-
-Precision maximisation WITH recall constraint
-
-NOT pure precision
-NOT pure eyeballing
-
+Threshold tuning therefore determines which extracted entities are accepted as valid, shaping the final high-confidence dataset used for downstream modelling.
 
 ---
 
-During Threshold Tuning (OOF stage)
+#### 5.2 Purpose and Design Principles
 
-Purpose: this is where plots are actually useful
+The purpose of threshold tuning in this pipeline is to define a clinically and operationally appropriate decision boundary for entity validation.
 
-You are trying to choose a decision threshold → this is inherently a curve-based problem
+Pipeline structure:
 
-You SHOULD generate:
+1. **Rule-based extraction (recall-first)**  
+   - Captures as many candidate entities as possible  
+   - Accepts higher false positives to minimise missed entities  
 
-1. Precision–Recall (PR) Curve
-	•	X-axis: Recall
-	•	Y-axis: Precision
+2. **Transformer validation (precision-biased filtering)**  
+   - Evaluates each extracted candidate  
+   - Removes false positives while retaining true entities  
 
-Why this matters:
-	•	Your task prioritises recall but still needs usable precision
-	•	PR curve shows the full trade-off across thresholds
+Design principle:
 
-⸻
+- Threshold tuning is not used to optimise generic metrics (e.g. F1) in isolation  
+- Instead, it aligns model behaviour with the role of each pipeline stage:
+  - Extraction → maximise coverage  
+  - Validation → enforce reliability  
+- Ensures the validation stage operates as a **controlled precision filter**
 
-2. F1 vs Threshold Curve
-	•	X-axis: threshold (0 → 1)
-	•	Y-axis: F1
+Operational objectives:
 
-Why:
-	•	Lets you directly pick the threshold that maximises F1
+- Increase precision by applying a stricter acceptance threshold  
+- Preserve sufficient recall to retain upstream coverage  
+- Reduce false positives in the final dataset  
+- Define consistent and reproducible decision behaviour for deployment  
 
-⸻
+System-level effect:
 
-3. Precision & Recall vs Threshold (optional but very useful)
-	•	Plot both on same graph
+- High-recall candidate generation  
+- Followed by precision-biased validation  
+- Producing a high-confidence entity dataset for downstream modelling  
 
-Why:
-	•	Makes trade-off explicit:
-	•	where recall drops sharply
-	•	where precision becomes acceptable
+---
 
-⸻
+#### 5.3 Model vs Decision Policy
 
-Key point
+The transformer model is trained using standard binary cross-entropy loss, which does not explicitly prioritise precision or recall.
 
-This is the most important visualisation stage in your pipeline
-—not final training.
+- The model learns to estimate p(y = 1) as accurately as possible  
+- No class weighting or precision-specific loss is applied  
+- Therefore, the model itself is not inherently precision- or recall-biased  
+
+Precision bias is introduced at the decision level, not during training:
+
+- Threshold tuning defines how probabilities are converted into binary outcomes  
+- A higher threshold increases precision by requiring stronger model confidence  
+- This shifts the behaviour of the validation stage without altering the model  
+
+The pipeline achieves precision-focused behaviour through threshold selection, not through modification of the model training objective.
+
+---
+
+### 6. Threshold Selection Objective
+
+The threshold selection problem requires defining an explicit optimisation objective as different objectives produce materially different datasets, with direct impact on downstream model performance.
+
+#### 6.1 Metrics Optimisation Strategies
+
+Three coherent optimisation strategies exist:
+
+1. **F1 maximisation (balanced objective)**  
+
+- Optimises the harmonic mean of precision and recall  
+- Produces a balanced trade-off between false positives and false negatives  
+
+Advantages:
+- Simple and widely used  
+- No additional constraints or assumptions required  
+
+Limitations:
+- Treats precision and recall as equally important  
+- Does not reflect asymmetric costs in this pipeline  
+- May retain unnecessary false positives  
+
+---
+
+**2. Recall maximisation (coverage-first objective)**  
+
+- Prioritises capturing as many true positives as possible  
+- Accepts lower precision and increased false positives  
+
+Advantages:
+- Maximises coverage of true entities  
+- Minimises missed detections  
+
+Limitations:
+- Produces a noisy dataset  
+- High false positive rate degrades downstream model learning  
+- Conflicts with the validation stage’s role as a filter  
+
+---
+
+**3. Precision maximisation (strict filtering objective)**  
+
+- Prioritises correctness of accepted entities  
+- Typically achieved by increasing the decision threshold  
+
+Advantages:
+- Produces a high-confidence dataset  
+- Reduces label noise  
+- Aligns with downstream modelling requirements  
+
+Limitations:
+- Reduces recall  
+- May discard valid entities  
+- Can lead to insufficient dataset size if applied without constraint  
+
+---
+
+#### 6.2 Objective Selection Logic
+
+The appropriate objective depends on how errors affect the final dataset:
+
+- False positives introduce label noise, which degrades downstream model performance  
+- False negatives reduce coverage, limiting available training signal  
+
+In this pipeline:
+
+- Label quality is critical for downstream learning  
+- Some loss of coverage is acceptable  
+- Excessive filtering must be avoided to preserve dataset utility  
+
+Therefore, neither balanced optimisation nor unconstrained precision maximisation is appropriate.
+
+---
+
+#### 6.3 Final Objective
+
+The selected objective is: 
+
+> Maximise precision subject to maintaining acceptable recall
+
+Rationale:
+
+- Prioritises reduction of false positives (primary risk)  
+- Retains sufficient true positives for downstream modelling  
+- Avoids the symmetry assumption of F1  
+- Avoids the instability of unconstrained precision maximisation  
+
+This defines threshold selection as a constrained optimisation problem where:
+
+- Precision is the primary objective  
+- Recall acts as a safeguard against excessive information loss  
+
+This objective directly reflects the role of the validation stage as a precision-biased filtering mechanism, producing a high-confidence dataset while preserving sufficient coverage for downstream tasks.
+
+---
+
+### 7. Final Threshold Selection Method
+
+#### 7.1 Mathematical Formulation
+
+Given the objective of precision maximisation with recall retention, threshold selection is defined as a constrained optimisation problem:
+
+- Select the threshold that maximises precision  
+- Subject to: `recall ≥ 0.85 × baseline_recall`
+
+Where:
+
+- `baseline_recall` is the recall at the default threshold (`t = 0.5`)  
+- This represents the model’s reference operating sensitivity  
+
+Minimum acceptable recall is defined as:
+
+- `recall_min = 0.85 × baseline_recall`  
+- This allows controlled degradation of recall (maximum 15%) when increasing precision  
+
+---
+
+#### 7.2 Rationale
+
+The thresholding strategy reflects the role of the transformer as a precision-oriented validation stage within the pipeline.
+
+- Precision is prioritised to reduce false positives and improve dataset quality  
+- However, unconstrained precision maximisation leads to severe recall collapse  
+- A constraint is therefore required to preserve sufficient true positives  
+
+A relative recall constraint is used instead of an absolute target:
+
+- No fixed clinical recall threshold exists  
+- Model performance varies across datasets  
+- Anchoring to baseline ensures consistency and reproducibility  
+
+The choice of the `0.85` factor defines an allowable degradation tolerance:
+
+- Permits recall reduction when increasing precision, but within controlled limits  
+- Reflects asymmetric error costs:
+  - False positives degrade dataset quality (high cost)  
+  - False negatives reduce coverage (lower but non-zero cost)  
+- Prevents degenerate behaviour:
+  - Avoids high-precision / near-zero recall solutions  
+  - Ensures the validator remains practically useful  
+- Preserves downstream utility:
+  - Maintains sufficient positive samples for modelling  
+  - Avoids over-filtering that weakens training signal  
+
+This results in a precision-biased but constrained decision rule, rather than a purely precision- or recall-optimised system.
+
+---
+
+#### 7.3 Implementation of Threshold Selection
+
+Threshold selection is performed by:
+
+1. Computing metrics across all thresholds  
+2. Extracting baseline recall at `t = 0.5`  
+3. Computing `recall_min = 0.85 × baseline_recall`  
+4. Filtering thresholds where `recall ≥ recall_min`  
+5. Selecting the threshold with maximum precision within this set  
+
+This produces a precision-biased validation stage with bounded recall loss, resulting in a high-confidence dataset suitable for downstream modelling.
+
+---
+
+### 8. Threshold Metrics Generation and Visualisation
+
+#### 8.1 Metric Generation
+
+Threshold-dependent performance is evaluated using out-of-fold (OOF) predictions by computing classification metrics across a dense grid of thresholds.
+
+Implementation:
+
+- Thresholds are defined over the range `[0, 1]` using 1001 evenly spaced values  
+  - Step size = 0.001  
+- For each threshold `t`:
+  - Convert probabilities → binary predictions  
+  - Compute:
+    - Precision  
+    - Recall  
+    - F1-score  
+
+Output:
+
+- A complete metrics table (`threshold_metrics.csv`) containing:
+  - `threshold`, `precision`, `recall`, `f1`  
+
+Design rationale:
+
+- High-resolution threshold grid (1001 points):
+  - Produces smooth, continuous metric curves  
+  - Enables fine-grained inspection of trade-offs  
+  - Avoids missing optimal or near-optimal operating regions  
+
+- Use of OOF predictions:
+  - Ensures all evaluations are out-of-sample  
+  - Prevents optimistic bias in threshold behaviour  
+
+This table forms the **metric landscape** used for both visualisation and final threshold selection.
+
+---
+
+#### 8.2 Role of Visualisation
+
+Visualisations are used to **validate and interpret** the threshold–metric relationships, not to directly select the threshold.
+
+Purpose:
+
+- Confirm expected model behaviour:
+  - Precision increases with threshold  
+  - Recall decreases with threshold  
+
+- Identify the structure of the trade-off:
+  - Smooth vs unstable transitions  
+  - Presence of usable operating regions  
+
+- Ensure the optimisation objective is feasible:
+  - Existence of thresholds with improved precision  
+  - Without catastrophic loss of recall  
+
+Visualisation therefore acts as a **sanity check and interpretability layer**, ensuring that the selected threshold (Section 7) is supported by the underlying metric behaviour.
+
+---
+
+#### 8.3 Visualisation Types and Interpretation
+
+Three plots are generated from the threshold metrics:
+
+---
+
+**1. Precision–Recall Curve**
+
+- X-axis: Recall  
+- Y-axis: Precision  
+
+Purpose:
+
+- Visualises the full precision–recall trade-off across thresholds  
+- Confirms that increasing precision requires sacrificing recall  
+- Identifies whether the model provides meaningful separation  
+
+Interpretation:
+
+- A smooth curve indicates stable model behaviour  
+- Absence of sharp collapse suggests usable threshold regions  
+- Confirms that precision gains are achievable without degenerate behaviour  
+
+---
+
+**2. F1 vs Threshold**
+
+- X-axis: Threshold  
+- Y-axis: F1-score  
+
+Purpose:
+
+- Identifies the threshold that maximises balanced performance  
+- Provides a reference point for overall model capability  
+
+Interpretation:
+
+- Peak F1 represents the best precision–recall balance  
+- Used as a **reference anchor**, not as the final decision rule  
+- Helps contextualise how far the chosen threshold deviates from balanced operation  
+
+---
+
+**3. Precision & Recall vs Threshold**
+
+- X-axis: Threshold  
+- Y-axis: Score (Precision and Recall)  
+
+Purpose:
+
+- Makes the trade-off explicit in threshold space  
+- Shows how each metric evolves as the decision boundary shifts  
+
+Interpretation:
+
+- Precision typically increases monotonically  
+- Recall typically decreases monotonically  
+- Key observations:
+  - Where recall begins to decline  
+  - Where precision meaningfully improves  
+  - Where recall degradation accelerates  
+
+This plot is most useful for verifying that the selected threshold lies within a **stable operating region**, rather than an extreme regime.
+
+---
+
+#### 8.4 Connection to Threshold Selection
+
+The outputs of this stage support, but do not replace, the selection method defined in Section 7.
+
+- Threshold selection is performed numerically using the metrics table  
+- Visualisations are used to:
+  - Validate that the constraint-based optimisation is appropriate  
+  - Confirm that the selected threshold lies in a stable trade-off region  
+  - Ensure no pathological behaviour (e.g. abrupt metric collapse)  
+
+Together:
+
+- Metrics table → enables exact threshold selection  
+- Visualisations → ensure the selection is justified and reliable  
+
+This separation maintains a clear distinction between:
+- **Decision rule (formal, reproducible)**  
+- **Interpretation (qualitative, diagnostic)**  
+
+---
 
 
 
 
+baseline_recall: 0.7039
+recall_min: 0.5983
+method: precision-max under recall constraint
+best_threshold: 0.5490
 
+Metrics at selected threshold:
+threshold    0.549000
+precision    0.724215
+recall       0.633333
+f1           0.675732
 
+Your output:
+	•	baseline recall: 0.7039
+	•	final recall: 0.6333 (~10% drop)
+	•	precision: 0.724
 
+Interpretation:
+	•	✔ recall preserved (within allowed range)
+	•	✔ precision improved
+	•	✔ validation acting as a filter
 
+This is precisely what the validation stage is supposed to do.
 
+the pieline will now be precision focused because  the decision threshold is stricter. The system behaviour is precision-biased, even if the model itself is not.
 
+	•	High-recall extraction already captured most candidates
+	•	Validation removes:
+	•	false positives
+	•	some true positives (controlled loss)
 
+That trade-off is intentional.
+
+High-recall candidate extraction followed by precision-biased validation to produce high-confidence entities for downstream modelling
 
 
 
