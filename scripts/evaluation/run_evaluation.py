@@ -2,14 +2,40 @@
 run_evaluation.py
 
 Purpose:
-    Generate a unified evaluation dataset containing:
-    - Ground truth labels
-    - Rule-based predictions
-    - Transformer probabilities
-    - Transformer predictions
+    Generate a unified evaluation dataset for pipeline-level analysis by combining:
+    - Ground truth labels (y_true)
+    - Rule-based predictions (rule_pred)
+    - Transformer outputs (model_prob, model_pred)
+    This dataset serves as the single source for all Phase 4 evaluation:
+    - Metric computation (precision, recall, F1)
+    - Confusion matrix analysis
+    - Rule vs transformer comparison
+    - Threshold-dependent analysis (PR/ROC curves)
+
+Workflow:
+    1. Load test dataset and define ground truth labels.
+    2. Compute rule-based predictions using deterministic extraction logic.
+    3. Load trained transformer model and tokenizer.
+    4. Reconstruct structured input text used during training.
+    5. Tokenise inputs and run batched inference.
+    6. Extract class probabilities (p(y = 1)).
+    7. Apply fixed threshold to obtain binary predictions.
+    8. Save consolidated evaluation dataset.
 
 Output:
     outputs/evaluation/pipeline_predictions.csv
+
+    Columns:
+        - entity_type : entity category (for stratified analysis)
+        - y_true      : ground truth label (0/1)
+        - rule_pred   : rule-based prediction (0/1)
+        - model_prob  : transformer probability for class 1
+        - model_pred  : transformer prediction after thresholding
+
+Notes:
+    - Inference is deterministic (model.eval(), no gradient computation).
+    - Tokenisation must match training to ensure input consistency.
+    - model_prob is retained for threshold analysis and curve-based evaluation.
 """
 
 # -------------------------
@@ -55,18 +81,20 @@ df["y_true"] = df["is_valid"].astype(int)
 
 def compute_rule_pred(row):
     """
-    Function to compute rule-based predictions based on entity type and negation status.
+    Compute rule-based prediction for a single entity.
+
+    Logic:
+        - SYMPTOM:
+            negated = False → valid (1)
+            negated = True  → invalid (0)
+        - All other entity types:
+            assumed valid (1)
 
     Args:
-        row: A row from the DataFrame containing columns
-            - entity_type
-            - negated
+        row (pd.Series): Contains 'entity_type' and 'negated'.
+
     Returns:
-        A binary prediction (0 or 1) based on the following rules:
-            - If entity_type is "SYMPTOM":
-                - If negated is False → return 1 (valid)
-                - If negated is True → return 0 (invalid)
-            - For all other entity types, return 1 (assumed valid)  
+        int: Binary prediction (0 or 1).
     """
     if row["entity_type"] == "SYMPTOM":
         return 1 if not row["negated"] else 0  # negated=False → valid, negated=True → invalid
@@ -98,18 +126,22 @@ model.eval()
 
 def build_text(row):
     """
-    Function to build the input text for the model by concatenating relevant information from the DataFrame row.
+    Construct model input text from structured fields.
+
+    This replicates the exact input format used during training,
+    ensuring consistency between training and inference.
 
     Args:
-        row: A row from the DataFrame containing columns
+        row (pd.Series): Contains structured input fields:
             - section
             - entity_type
             - entity_text
             - concept
             - task
             - sentence_text
+
     Returns:
-        A single string concatenating the above information in a structured format.
+        str: Concatenated input string for tokenisation.
     """
     return (
         f"[SECTION] {row['section']} "
@@ -131,7 +163,7 @@ texts = df.apply(build_text, axis=1).tolist()
 # Store model outputs
 probs = []
 
-# Loop over the text indices in batches to avoid memory issues
+# Iterate over dataset in fixed-size batches for efficient inference
 for i in tqdm(range(0, len(texts), BATCH_SIZE)):
 
     # Slice to get the current batch of texts based on the batch size using the defined pointer i
@@ -155,8 +187,8 @@ for i in tqdm(range(0, len(texts), BATCH_SIZE)):
         outputs = model(**inputs)
         logits = outputs.logits
 
-        # Softmax → convert to probabilities, then [:, 1] extracts probability of class 1 (valid)
-        batch_probs = torch.softmax(logits, dim=1)[:, 1]
+        # Convert logits → probabilities; select class 1 (valid) probability
+        batch_probs = torch.softmax(logits, dim=1)[:, 1] # dim
 
     # Move probabilities back to CPU, convert to numpy, then append to list
     probs.extend(batch_probs.cpu().numpy())
