@@ -10,7 +10,127 @@ This phase defines the evaluation framework used to assess both the trained tran
 - Precision–recall trade-offs under fixed thresholding  
 - Performance variation across entity types  
 
-The goal is to verify that the transformer operates as a precision-oriented validation layer, improving correctness over a high-recall extraction baseline, ready for deployment in the full ICU corpus.
+The goal is to evaluate overall pipeline performance and quantify the contribution of the transformer validation layer, ensuring readiness for deployment on the full ICU corpus.
+
+---
+
+## Evaluation System Design
+
+### 1. Overview
+
+The evaluation is designed to assess pipeline-level performance, not the transformer in isolation, operating on three aligned components:
+
+- **Ground truth** (manually annotated test set; reference)
+- **Rule-based extraction** (high-recall baseline)
+- **Transformer validation** (final system output)
+
+This forms a 3-way evaluation framework, where both systems are evaluated against the same ground truth:
+
+```text
+			  Ground Truth (y_true)
+				▲      	      	▲
+				│        	    │
+			Rule-Based  	Transformer
+			(baseline)   	(final)
+``` 
+
+- Rule-based predictions vs ground truth  
+- Transformer predictions vs ground truth  
+
+There is no direct pairwise evaluation between systems, improvement is inferred from changes in metrics relative to ground truth.
+
+This design ensures:
+
+- A single, unbiased reference (`y_true`)
+- Direct comparability of system performance
+- Valid interpretation of precision–recall trade-offs  
+
+The evaluation objective is to verify that the transformer functions as a:
+
+> **precision-oriented validation layer applied to a high-recall extraction system**
+
+Success is defined by:
+
+- Precision increase (reduction in false positives)  
+- Controlled reduction in recall  
+- Net improvement in F1 score  
+- Coherent performance across entity types  
+
+---
+
+### 2. System Structure
+
+The evaluation is executed in two sequential layers:
+
+#### 2.1 Core System Evaluation (Primary)
+
+This layer establishes global system behaviour, each system is evaluated independently against ground truth to compute:
+
+1. Accuracy, Precision, Recall, F1  
+2. Confusion matrix components (TP, FP, TN, FN)
+
+This produces two directly comparable metric sets:
+
+- Rule-based performance (baseline)  
+- Transformer performance (final system)  
+
+Improvement is interpreted through metric deltas:
+
+- Δ Precision → reduction in false positives  
+- Δ Recall → impact on coverage  
+- Δ F1 → overall system improvement  
+
+This layers purpose is to:
+
+- Validate that the transformer improves over the baseline  
+- Quantify the precision–recall trade-off at a global level  
+- Ensure that the pipeline behaves as intended before deeper analysis 
+
+---
+
+#### 2.2 Stratified & Diagnostic Analysis (Secondary)
+
+This layer explains where and why performance changes occur, analysis includes:
+
+- Performance stratified by entity type  
+- Probability distributions (`model_prob`)  
+- Calibration behaviour  
+- Precision–Recall and ROC curves  
+- Threshold sensitivity  
+
+Expected trends:
+
+| Entity Type             | Behaviour |
+|------------------------|----------|
+| `SYMPTOM`              | Smaller gains (already structured) |
+| `INTERVENTION`         | Moderate gains |
+| `CLINICAL_CONDITION`   | Larger or variable gains |
+
+The purpose of this layer is to:
+
+- Provide a deeper understanding of system behaviour (entity-level insights)
+- Identify specific weaknesses or strengths in the baseline and transformer
+- Validate expected behaviour patterns based on the model design and training data characteristics
+
+---
+
+### 3. Rationale for Two-Layer Design
+
+The separation enforces a strict evaluation order:
+
+1. **Validate global system behaviour first**
+   - Confirm that the pipeline improves over baseline  
+   - Ensure metric trends are coherent  
+
+2. **Then perform deeper analysis**
+   - Avoid over-interpreting local patterns  
+   - Ensure stratified insights are grounded in real system behaviour  
+
+Without this structure:
+
+- Local improvements may be misleading  
+- Noise may be mistaken for meaningful patterns  
+- Overall system performance may be mischaracterised
 
 ---
 
@@ -20,19 +140,13 @@ The goal is to verify that the transformer operates as a precision-oriented vali
 
 Evaluation is based on constructing a single unified dataset where all prediction sources are aligned at the entity level. Each row corresponds to one candidate entity and contains:
 
-- Ground truth label
-- Rule-based prediction
-- Transformer prediction (probability + thresholded output)
+- Ground truth label  
+- Rule-based prediction  
+- Transformer prediction (probability + thresholded output)  
 
-This dataset is the foundation for all evaluation, enabling:
+This dataset is the foundation for all downstream evaluation, enabling for consistent metric computation and stratified analysis.
 
-- Metric computation (precision, recall, F1, accuracy)
-- Confusion matrix analysis
-- Rule vs transformer comparison
-- Threshold-dependent analysis (PR/ROC curves)
-- Stratified analysis by entity type
-
-No metrics are computed during this stage, this step strictly produces the evaluation-ready dataset which can derive metrics downstream. This separation ensures reproducibility and flexibility in analysis.
+No metrics are computed during this stage; this step strictly produces the evaluation-ready dataset. This separation ensures reproducibility and flexibility in analysis.
 
 ---
 
@@ -58,9 +172,10 @@ The rule-based system represents the high-recall extraction baseline.
 
 Rationale:
 
-- The extraction stage prioritises recall (capture everything) as rule-based methoda are limited in precision due to semantic ambiguity and lack of context understanding
-- Minimal precision logic is applied only where trivial and high-impact (negation of symptoms)
-- This creates a weak but acceptable baseline, allowing measurement of transformer improvement
+- The extraction stage prioritises recall (maximising coverage)  
+- Rule-based methods are limited in precision due to lack of contextual understanding  
+- Minimal precision logic is applied only where trivial and high-impact (negation)  
+- This establishes a weak but consistent baseline for measuring transformer improvement  
 
 ---
 
@@ -75,11 +190,11 @@ For each entity:
 
 Key properties:
 
-- This is the first use of the tuned threshold
-- These predictions represent the final pipeline output and are directly compared to ground truth for performance evaluation
-- The model is explicitly precision-oriented to improve correctness compared to the rule-based baseline, so we expect:
-  - Precision ↑ (fewer false positives)
-  - Recall ↓ (some true positives removed)
+- This is the first application of the tuned threshold, defining the final decision boundary used for deployment-level predictions  
+- These predictions represent the final pipeline output and are directly compared to ground truth  
+- The model is explicitly precision-oriented, so expected behaviour is:
+  - Precision ↑ (fewer false positives)  
+  - Recall ↓ (removal of uncertain positives)  
 
 ---
 
@@ -97,11 +212,11 @@ Each row represents one extracted entity and aligns:
 
 Design rationale:
 
-- **Single-table design:** Ensures all systems are evaluated against the same reference `y_true` without recomputation
-- **model_prob retained:** Required for PR curves, ROC analysis, and threshold sensitivity (these cannot be derived from binary outputs)
-- **model_pred included:** Represents the actual deployed decision rule as the final output of the pipeline
-- **entity_type included:** Enables analysis of where the pipeline performs well or poorly (entity-type stratification)
-- **Separation of concerns:** This dataset is purely for evaluation. No metrics are computed here, which is reserved for the next step (plots and analysis). This allows for flexible analysis and reproducibility.
+- **Single-table design:** Ensures all systems are evaluated against the same reference without recomputation  
+- **model_prob retained:** Required for PR curves, ROC analysis, and threshold sensitivity  
+- **model_pred included:** Represents the deployed decision rule  
+- **entity_type included:** Enables stratified performance analysis  
+- **Separation of concerns:** Dataset generation is independent from metric computation, enabling reproducibility 
 
 ---
 
@@ -171,345 +286,3 @@ All script code and logic is implemented in `run_evaluation.py` with these steps
 
 ---
 
-Next step (do NOT jump ahead)
-
-Do not compute plots or stratification yet.
-
-Immediate next step:
-
-Create a metrics + confusion matrix script using this file.
-
-⸻
-
-Why this order matters
-
-You structured Phase 4 into two layers:
-
-1. Core system evaluation (FIRST)
-	•	Overall performance
-	•	Rule vs Transformer comparison
-	•	Confusion matrices
-	•	Precision / Recall / F1
-
-2. Deeper analysis (SECOND)
-	•	Entity-type breakdown
-	•	Calibration / distributions
-	•	PR / ROC curves
-
-You must validate global behaviour first before deeper analysis.
-
-
----
-
-## 1. Evaluation Setup
-
-### 1.1 Ground Truth
-
-- Source: **manually annotated test set (n = 180)**
-- Each entity contains:
-  - `is_valid` (ground truth label)
-
-This is the **only unbiased dataset** used for final evaluation.
-
----
-
-### 1.2 Predictions
-
-For each test entity:
-
-- **Rule-based prediction**
-  - `SYMPTOM` → derived from `negated` field:
-    - `negated = false` → valid
-    - `negated = true` → invalid
-  - `INTERVENTION` / `CLINICAL_CONDITION`:
-    - All extracted entities assumed **valid**
-
-- **Transformer prediction**
-  - `is_valid` (model output)
-  - `confidence` (probability score)
-
----
-
-## 2. Comparisons
-
-You are evaluating **two systems against ground truth**:
-
-### 2.1 Rule-Based vs Ground Truth
-- Measures baseline extraction quality
-
-### 2.2 Transformer vs Ground Truth
-- Measures final system performance
-
-### 2.3 Improvement Analysis
-- Compare rule vs transformer performance directly
-
----
-
-## 3. Metrics
-
-### 3.1 Core Metrics
-
-For each comparison:
-
-- **Accuracy**
-- **Precision**
-- **Recall**
-- **F1 Score**
-
-Definitions:
-
-- Precision → correctness of positive predictions  
-- Recall → ability to detect true positives  
-- F1 → balance of precision and recall  
-
----
-
-## 4. Confusion Matrix Analysis
-
-For both rule-based and transformer:
-
-- True Positive (TP)
-- False Positive (FP)
-- True Negative (TN)
-- False Negative (FN)
-
-Purpose:
-- Understand **types of errors**, not just overall score
-
----
-
-## 5. Improvement Analysis
-
-Explicitly compare:
-
-- Rule vs Transformer:
-  - Δ Precision
-  - Δ Recall
-  - Δ F1
-
-Expected pattern:
-
-| Entity Type         | Expected Outcome |
-|--------------------|----------------|
-| SYMPTOM            | Small improvement |
-| INTERVENTION       | Moderate improvement |
-| CLINICAL_CONDITION | Large improvement |
-
----
-
-✔ REQUIRED:
-	•	Scalar metrics (precision, recall, F1)
-	•	Precision–Recall curve
-	•	Confusion matrix (at selected threshold)
-	•	Baseline vs final comparison (selected threshold vs default threshold)
-
-✔ STRONGLY RECOMMENDED:
-	•	Calibration check
-    •	Histogram of predicted probabilities
-    or
-    •	Reliability curve (if possible)
-	•	ROC curve
-
-Pipeline-level (critical):
-	•	Rule-based vs Transformer comparison
-	•	3-way framing with ground truth
-
-Outputs:
-	•	Save:
-	•	y_true
-	•	y_prob
-	•	y_pred
-
-Pipeline performance (THIS is your real objective)
-
-This is what you were originally aiming for.
-
-You are not just evaluating a model, you are evaluating a system:
-
-Ground truth
-vs
-Rule-based extraction
-vs
-Transformer validation (final output)
-
-“we need the model to output label + confidence”
-
-✔ Yes. You need:
-
-For each test sample:
-	•	y_true
-	•	y_prob (softmax output)
-	•	y_pred (after threshold = 0.549)
-
-⸻
-
-Why this is necessary
-
-Because you need to compute:
-
-1. Transformer performance
-	•	compare y_pred vs y_true
-
-2. Rule-based extraction performance
-	•	compare extraction labels vs y_true
-
-3. Pipeline improvement
-	•	compare:
-	•	rule-based vs ground truth
-	•	transformer vs ground truth
-
-Overall Pipeline Comparison (CORE)
-
-You need a single evaluation table where each row represents one candidate entity, with:
-  - entity_type (e.g. symptom, intervention, condition)
-	•	y_true → ground truth label (0/1)
-	•	rule_pred → rule-based output (0/1)
-    If entity is extracted → rule_pred = 1
-    If entity is not extracted → rule_pred = 0
-    If negated → rule_pred = 0
-    Else → rule_pred = 1
-    rule_pred = is_extracted AND NOT negated
-	•	model_prob → transformer probability
-	•	model_pred → transformer prediction (after threshold = 0.549)
-
-You need:
-
-Table: Pipeline Comparison
-
-Metrics table + FP and FN table
-
-You compute metrics twice, using the same y_true:
-
-rule-based performance:
-
-precision_score(y_true, rule_pred)
-recall_score(y_true, rule_pred)
-f1_score(y_true, rule_pred)
-
-Transformer performance:
-
-precision_score(y_true, model_pred)
-recall_score(y_true, model_pred)
-f1_score(y_true, model_pred)
-
-
-That gives your 3-way comparison
-
-You are not comparing systems directly to each other.
-
-You are comparing both against ground truth.
-
-Ground truth (reference)
-
-→ Rule-based predictions vs ground truth
-→ Transformer predictions vs ground truth
-
-What about comparing rule-based vs transformer?
-
-You do not compute TP/FP between them.
-
-Instead, you interpret:
-
-Change
-Meaning
-Precision ↑
-fewer false positives
-Recall ↓
-some true positives removed
-
-That implicitly shows improvement.
-
-
-Entity-Type Stratified Performance (SECONDARY)
-deeper analysis
-
-
-“Where does the pipeline actually help the most?”
-
-It is useful because:
-	•	Different entity types have different linguistic structure
-	•	Rule-based extraction performance will vary by type
-	•	Transformer gains will likely be non-uniform
-
-
-Entity Type
-Rule-based
-Transformer effect
-Structured / explicit (e.g. symptoms)
-High precision already
-Small improvement
-Ambiguous / contextual (e.g. interventions)
-Lower precision
-Larger improvement
-Complex / semantic (e.g. conditions)
-Variable
-Depends on model understanding
-
-table:
-
-Entity Type
-Stage
-Precision
-Recall
-F1
-SYMPTOM
-Rule-based
-…
-…
-…
-SYMPTOM
-Transformer
-…
-…
-…
-INTERVENTION
-Rule-based
-…
-…
-…
-INTERVENTION
-Transformer
-…
-…
-…
-CLINICAL_CONDITION
-Rule-based
-…
-…
-…
-CLINICAL_CONDITION
-Transformer
-…
-…
-…
-
-This lets you answer:
-	•	Where is rule-based weakest?
-	•	Where does transformer add most value?
-	•	Is improvement consistent across entity types?
-
-That is real insight, not just metrics.
-
-
-What each table tells you
-
-Table 1:
-	•	Overall system behaviour
-	•	Confirms:
-	•	precision ↑
-	•	recall ↓ (controlled)
-
-⸻
-
-Table 2:
-	•	Where improvements occur
-	•	Tests your hypothesis:
-“Does the transformer help weaker entity types more?”
-
-
-	•	Correctness is already measured in Table 1
-	•	Table 2 shows variation in performance across entity types
-
-So it answers:
-	•	“Where is the model strong/weak?”
-	•	“Where does the pipeline add value?”
