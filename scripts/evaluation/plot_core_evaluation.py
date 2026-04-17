@@ -21,7 +21,7 @@ Workflow:
     5. Save all visual outputs to disk
 
 Outputs:
-    outputs/evaluation/plots/
+    outputs/evaluation/core_plots/
         - rule_confusion_matrix.png
         - transformer_confusion_matrix.png
         - metrics_comparison.png
@@ -43,7 +43,7 @@ from pathlib import Path
 df = pd.read_csv("outputs/evaluation/core_metrics.csv", index_col=0) # Set index to system names (Rule-Based, Transformer)
 
 # Create output directory
-out_dir = Path("outputs/evaluation/plots")
+out_dir = Path("outputs/evaluation/core_plots")
 out_dir.mkdir(parents=True, exist_ok=True)
 
 # -------------------------
