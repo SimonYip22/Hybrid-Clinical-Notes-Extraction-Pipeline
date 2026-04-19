@@ -86,7 +86,7 @@ def validate_entities(
             f"[ENTITY TYPE] {e['entity_type']} "
             f"[ENTITY] {e['entity_text']} "
             f"[CONCEPT] {e['concept']} "
-            f"[TASK] {e.get('validation', {}).get('task', "")} "
+            f"[TASK] {e.get('validation', {}).get('task', '')} "
             f"[TEXT] {e['sentence_text']}"
         )
         for e in entities
