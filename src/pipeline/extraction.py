@@ -1,3 +1,33 @@
+"""
+extraction.py
+
+Purpose:
+    Deterministic rule-based extraction of clinical entities from free-text notes.
+
+Workflow:
+    1. Preprocess note text
+    2. Extract clinical sections
+    3. Apply rule-based extraction (symptoms, interventions, conditions)
+    4. Aggregate entity-level outputs
+
+Interface:
+    - extract_entities_from_note(): single note
+    - run_extraction_on_dataframe(): batch processing (primary interface)
+
+Inputs:
+    - TEXT (required)
+    - SUBJECT_ID, HADM_ID, ICUSTAY_ID (optional)
+
+Outputs:
+    List[Dict[str, Any]]
+        - One dictionary per extracted entity
+        - Includes entity text, type, spans, context, and metadata
+
+Notes:
+    - Designed for high recall (may include false positives)
+    - Validation is handled downstream (validation.py)
+"""
+
 from typing import List, Dict, Any
 import pandas as pd
 
@@ -18,7 +48,26 @@ def extract_entities_from_note(
     hadm_id: str = "",
     icustay_id: str = ""
 ) -> List[Dict[str, Any]]:
+    """
+    Extract clinical entities from a single note using deterministic rules.
 
+    Workflow:
+        1. Preprocess raw text
+        2. Extract structured sections
+        3. Apply rule-based extractors per section
+        4. Aggregate entity outputs
+
+    Args:
+        note_id (str): Unique identifier for the note
+        text (str): Raw clinical note text
+        subject_id (str, optional): Patient identifier
+        hadm_id (str, optional): Hospital admission ID
+        icustay_id (str, optional): ICU stay ID
+
+    Returns:
+        List[Dict[str, Any]]:
+            Entity-level outputs including text, type, spans, context, and metadata
+    """
     # 1. Preprocess the note text
     preprocessed_text = preprocess_note(text)
 
@@ -61,7 +110,26 @@ def extract_entities_from_note(
 # ------------------------------------------------------------
 
 def run_extraction_on_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    Apply deterministic extraction across a dataset of clinical notes.
 
+    Workflow:
+        1. Validate required columns
+        2. Iterate over notes efficiently (itertuples)
+        3. Generate note-level identifiers
+        4. Call single-note extraction
+        5. Aggregate all entity outputs
+
+    Args:
+        df (pd.DataFrame):
+            Input dataset containing:
+                - TEXT (required)
+                - SUBJECT_ID, HADM_ID, ICUSTAY_ID (optional)
+
+    Returns:
+        List[Dict[str, Any]]:
+            Aggregated entity-level outputs across all notes
+    """
     if "TEXT" not in df.columns:
         raise ValueError("DataFrame must contain 'TEXT' column")
 
@@ -74,7 +142,7 @@ def run_extraction_on_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
         hadm_id = str(getattr(row, "HADM_ID", ""))
         icustay_id = str(getattr(row, "ICUSTAY_ID", ""))
         
-        note_id = f"note_{idx + 1}"
+        note_id = f"note_{idx}"
 
         entities = extract_entities_from_note(
             note_id=note_id,
