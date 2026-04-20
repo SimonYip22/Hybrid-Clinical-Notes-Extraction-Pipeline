@@ -846,52 +846,139 @@ From the same output, multiple dataset variants can be derived:
 
 ---
 
-### Final Dataset Properties
+### 7. Final Dataset Properties
 
 Full metrics are available in `full_dataset_explore.ipynb`.
 
-1. Scale
+#### 7.1 Dataset Scale
 
-  * Total number of notes processed (~160k)  
-  * Total number of entities extracted (~780k)  
+| Metric | Value |
+|------|------|
+| Total reports (ICU corpus) | 162,296 |
+| Reports with ≥1 entity | 71,917 |
+| % reports with entities | **44.31%** |
+| Total entities extracted | **780,941** |
 
-2. Distribution Checks
-
-  * Entities per note (mean, median, distribution)  
-  * Entity type distribution:
-      * SYMPTOM  
-      * INTERVENTION  
-      * CONDITION  
-
-3. Coverage Analysis
-
-  * Unique SUBJECT_IDs in extracted dataset  
-  * Compared to source dataset (~25k)  
-
-  Purpose:
-  - Quantify extraction coverage across patients  
-
-4. Extraction Coverage
-
-  * Notes with ≥1 entity  
-  * Notes with zero entities  
-  * % coverage  
-
-  Purpose:
-  - Evaluate recall at the note level  
-
-5. Validation Behaviour
-
-  * % of entities where is_valid == True  
-  * Confidence score distribution  
-
-  Purpose:
-  - Assess threshold effectiveness  
-  - Understand precision–recall trade-off  
+- The pipeline extracts entities from ~44% of reports  
+- This is expected for a high-recall deterministic system applied to heterogeneous clinical notes  
+- A substantial dataset (~781K entities) is generated for downstream use  
 
 ---
 
-### Workflow Implementation
+#### 7.2 Subject Coverage
+
+| Metric | Value |
+|------|------|
+| Unique subjects (ICU corpus) | 25,054 |
+| Unique subjects (final dataset) | 8,621 |
+
+- Not all patients have extractable content, only ~34% of subjects have at least one extracted entity
+- The resulting dataset represents a clinically relevant subset rather than full population coverage  
+
+---
+
+#### 7.3 Entities per Report
+
+| Statistic | Value |
+|----------|------|
+| Mean | 10.86 |
+| Median | 7 |
+| Std | 10.86 |
+| Min | 1 |
+| 25th percentile | 3 |
+| 75th percentile | 16 |
+| Max | 98 |
+
+- Distribution is right-skewed (few reports with very high counts)  
+- Median (7) is substantially lower than mean → confirms skew  
+- Typical reports contain a moderate number of entities (11)
+- High variance reflects heterogeneity in note structure and content  
+
+---
+
+#### 7.4 Entity Type Distribution
+
+| Entity Type | Count | Percentage |
+|------------|------|-----------|
+| INTERVENTION | 334,872 | 42.88% |
+| CLINICAL_CONDITION | 280,314 | 35.89% |
+| SYMPTOM | 165,755 | 21.23% |
+
+- Interventions dominate, consistent with ICU documentation focus  
+- Clinical conditions form a substantial proportion  
+- Symptoms are least frequent, reflecting the rule design of no duplicated symptom concepts per line of a note
+
+---
+
+#### 7.5 Validation Outcomes
+
+| Metric | Value |
+|------|------|
+| Valid entities | 319,852 |
+| % valid | **40.96%** |
+
+- ~41% of candidates are retained after validation  
+- Confirms expected behaviour of high-recall extraction followed by filtering  
+- Remaining ~59% represent false positives or low-confidence candidates  
+
+---
+
+#### 7.6 Validation by Entity Type
+
+| Entity Type | Valid (%) |
+|------------|----------|
+| INTERVENTION | **51.76%** |
+| SYMPTOM | 36.65% |
+| CLINICAL_CONDITION | 30.60% |
+
+- Interventions achieve highest validation rate → more structured and easier to detect  
+- Clinical conditions show lowest precision → higher ambiguity and lexical variation  
+- Symptoms fall between the two → originally expected to be highest validation rate
+
+This demonstrates class-dependent model performance.
+
+---
+
+#### 7.7 Confidence Score Distribution
+
+| Statistic | Value |
+|----------|------|
+| Mean | 0.506 |
+| Median | 0.508 |
+| Std | 0.120 |
+| Min | 0.171 |
+| 25th percentile | 0.415 |
+| 75th percentile | 0.609 |
+| Max | 0.738 |
+
+- Confidence scores are centred around ~0.5  
+- Distribution aligns closely with the selected threshold (0.549)  
+- Indicates:
+  - Effective separation between valid and invalid candidates  
+  - Reasonable calibration of the validation model  
+
+---
+
+#### 7.8 Summary
+
+- The pipeline successfully scales to the full dataset without modification  
+- Produces a large, structured entity dataset (~781K entities)  
+- Maintains expected behaviour:
+  - High-recall extraction  
+  - Moderate precision after validation  
+- Demonstrates:
+  - Robustness across heterogeneous clinical data  
+  - Consistent performance patterns across entity types  
+
+The resulting dataset is suitable for:
+
+- Downstream modelling (filtered subset)  
+- Analysis and auditing (full dataset)  
+- Further research and pipeline refinement
+
+---
+
+### 8. Workflow Implementation
 
 All logic in `generate_full_dataset.py` follows these steps:
 
@@ -995,15 +1082,46 @@ The system is a stateless inference API built using FastAPI.
 
 ## 4. System Architecture
 
-Client
-↓
-FastAPI (/predict)
-↓
-pipeline.py (run_pipeline)
-↓
-Preprocessing → Extraction → Validation
-↓
-JSON output
+Client (browser / script / curl)
+        ↓ HTTP request
+Cloud Run (Google Cloud)
+        ↓
+Uvicorn (web server)
+        ↓
+FastAPI (API framework)
+        ↓
+Your endpoint (/predict)
+        ↓
+pipeline.py (your logic)
+        ↓
+Model + rules
+        ↓
+Return JSON
+        ↑
+FastAPI formats response
+        ↑
+Uvicorn sends HTTP response
+        ↑
+Cloud Run returns to user
+
+---
+Real sequence:
+
+1. User sends HTTP request:
+
+POST https://your-app.run.app/predict
+
+2. Cloud Run receives it
+3. Cloud Run forwards to your container
+4. Uvicorn receives request
+5. FastAPI routes to /predict
+6. Pydantic validates input
+7. Your function runs:
+
+run_pipeline(...)
+
+8. Output returned as JSON
+9. Response sent back to user
 
 ---
 
@@ -1099,6 +1217,102 @@ This design is chosen to maximise:
 ### Maintainability
 
 - Single pipeline reused across all system stages  
+
+This setup proves:
+
+Engineering
+
+* modular system design
+* separation of concerns
+
+ML
+
+* real inference system (not notebook)
+* end-to-end pipeline
+
+Deployment
+
+* containerisation
+* cloud hosting
+* reproducibility
+
+That combination is what matters.
+
+Are you doing “standard DevOps for ML”?
+
+Yes — this is exactly standard for inference systems.
+
+You are covering:
+
+* API service (FastAPI)
+* Serving layer (Uvicorn)
+* Containerisation (Docker)
+* Cloud deployment (Cloud Run)
+* CI/CD (GitHub Actions)
+
+That is complete DevOps coverage for an ML inference service.
+
+Why this is only “partial MLOps”
+
+MLOps includes the entire lifecycle of models, not just serving.
+
+What you ARE doing:
+
+* Model inference pipeline
+* Deployment
+* Reproducibility
+
+What you are NOT doing:
+
+* Automated retraining
+* Data versioning
+* Monitoring model performance in production
+* Drift detection
+* Experiment tracking
+
+Those are MLOps components.
+
+---
+
+What real production systems would add (for context)
+
+A full production ML system might include:
+
+Monitoring
+
+* track prediction distributions over time
+* detect drift in inputs or outputs
+
+Logging
+
+* store all requests + outputs
+* enable debugging and audit
+
+Alerting
+
+* notify if system degrades
+
+Retraining pipeline
+
+* update model when performance drops
+
+If you wanted to extend (not required):
+
+Minimal production upgrades
+
+* request logging (store inputs/outputs)
+* simple metrics (latency, counts)
+
+ML-specific upgrade
+
+* confidence distribution tracking
+* threshold sensitivity analysis in production
+
+True MLOps (bigger jump)
+
+* data pipeline for retraining
+* model versioning
+* drift detection
 
 ---
 
