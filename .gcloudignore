@@ -1,0 +1,24 @@
+# ignore everything
+*
+
+# allow top-level directories to be traversed
+!app/**
+!src/**
+!models/**
+
+# allow ONLY final model
+models/*
+!models/bioclinicalbert_final/**
+!models/bioclinicalbert_final/
+
+# allow required files
+!requirements-api.txt
+!Dockerfile
+!.gitignore
+!.gcloudignore
+!README.md
+!LICENSE
+
+# ignore noise inside allowed folders
+__pycache__/
+*.pyc
