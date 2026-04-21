@@ -1,30 +1,33 @@
 FROM python:3.11-slim
 
-# Set working directory
+# Set working directory (single source of truth)
 WORKDIR /app
 
-# Install system dependencies
+# System dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for caching)
+# Install Python dependencies (cached layer)
 COPY requirements-api.txt .
 RUN pip install --no-cache-dir -r requirements-api.txt
 
-# Download NLTK at build time
+# NLTK resources (build-time, deterministic image)
 RUN python -m nltk.downloader punkt
 
-# Copy the specific project files needed for the API
-COPY app/ app/
-COPY src/ src/
-COPY models/bioclinicalbert_final/ models/bioclinicalbert_final/
+# Copy application code
+COPY app/ ./app/
+COPY src/ ./src/
 
-# IMPORTANT: ensures Python can find src/
-ENV PYTHONPATH=src
+# Copy model into application namespace (IMPORTANT)
+COPY models/bioclinicalbert_final/ ./models/bioclinicalbert_final/
 
-# Expose port (Cloud Run uses 8080)
+# Ensure Python can import src modules correctly
+ENV PYTHONPATH=/app:/app/src
+
+# Cloud Run port requirement
+ENV PORT=8080
 EXPOSE 8080
 
-# Run API
+# Start server (Cloud Run compatible)
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

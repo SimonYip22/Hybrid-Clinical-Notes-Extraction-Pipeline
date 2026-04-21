@@ -19,4 +19,5 @@ documents/
 README.md
 LICENSE
 
-models/bioclinicalbert/
+models/*
+!models/bioclinicalbert_final/
