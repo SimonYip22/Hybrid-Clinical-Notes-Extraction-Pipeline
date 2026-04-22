@@ -10,20 +10,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout code (with LFS)
         uses: actions/checkout@v4
         with:
           lfs: true
-      
-      - name: Pull Git LFS files
+
+      - name: Pull LFS files
         run: |
           git lfs install
           git lfs pull
-      
-      - name: Verify model files
+          git lfs checkout
+
+      - name: Verify model exists
         run: |
           ls -lh models/bioclinicalbert_final/
-          head models/bioclinicalbert_final/tokenizer_config.json
+          head -n 5 models/bioclinicalbert_final/tokenizer_config.json
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -39,8 +40,7 @@ jobs:
       - name: Build and push container
         run: |
           gcloud builds submit \
-            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/clinical-nlp-api \
-            --async
+            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/clinical-nlp-api
 
       - name: Deploy to Cloud Run
         run: |
