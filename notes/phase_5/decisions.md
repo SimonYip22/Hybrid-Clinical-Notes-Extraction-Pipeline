@@ -1036,30 +1036,285 @@ All logic in `generate_full_dataset.py` follows these steps:
 
 ## Deployment Pipeline
 
-## 1. Overview
+### 1. Overview
 
-This stage exposes the clinical NLP pipeline as a **lightweight inference service**, enabling real-world usage of the system through an API interface.
+This section describes how the clinical NLP pipeline is transformed from a locally validated system into a fully deployed, production-ready API service.
 
-The deployment reuses the existing `pipeline.py` module directly, ensuring:
+The deployment process follows a staged approach, with each step addressing a specific requirement:
 
-> A single source of truth across development, evaluation, and production.
+- **Local execution** → verify core pipeline and model behaviour  
+- **Containerisation (Docker)** → ensure reproducible runtime environment  
+- **Cloud deployment (Cloud Run)** → expose the API as a public service  
+- **CI/CD (GitHub Actions)** → automate build and deployment on code changes  
 
-No additional model logic is introduced at deployment level.
+The system is ultimately exposed as a lightweight inference API, enabling real-world usage via structured endpoints. Key design principles:
 
-This is a production level system design that reflects real-world ML deployment patterns
+- Reuse of the existing `pipeline.py` module  
+- Single source of truth across development, evaluation, and production  
+- No additional model logic introduced at deployment stage  
+
+Overall, the focus is not on modifying the model itself, but on packaging, serving, and automating the pipeline in a consistent and production-aligned manner.
 
 ---
 
 ## 2. System Design
 
-The system is a stateless inference API built using FastAPI.
+The system is implemented as a stateless inference API that exposes the clinical NLP pipeline through a lightweight service layer. The API acts as a thin wrapper over the existing pipeline, enabling external access without modifying core model or processing logic.
 
-### Core properties:
+### 2.1 Core Properties
 
-- Stateless (no database, no session tracking)  
-- Deterministic (same input → same output)  
-- Thin wrapper over existing pipeline  
-- Fully reproducible outputs  
+- **Stateless Inference**
+  - No database or session storage  
+  - Each request is processed independently  
+  - Enables horizontal scaling in cloud environments  
+
+- **Deterministic**
+  - Identical inputs produce identical outputs  
+  - No stochastic behaviour at inference time  
+  - Ensures reproducibility and reliability  
+
+- **Thin Wrapper Architecture**
+  - API layer contains no model or preprocessing logic and acts only as an interface to the pipeline.
+  - Directly invokes the existing `pipeline.py` module  
+
+- **Single Source of Truth**
+  - All environments (local, container, cloud) use the same `pipeline.py` implementation.
+  - Eliminates divergence between environments  
+
+---
+
+### 2.2 API Interface
+
+The system is exposed via a minimal HTTP API designed for inference-only usage.
+
+The API is responsible for:
+
+- Receiving input text via HTTP requests  
+- Passing input directly to the pipeline  
+- Returning structured extraction outputs  
+
+The API does not handle:
+
+- Model training or updates  
+- Data persistence or database interactions  
+- Additional business logic beyond inference orchestration  
+
+This ensures a strict separation between the ML pipeline (logic) and the serving layer (API).
+
+---
+
+### 2.3 Design Implications
+
+This design leads to:
+
+- **Consistency:** Identical behaviour across local, containerised, and deployed environments  
+- **Scalability:** Stateless design enables horizontal scaling in Cloud Run  
+- **Maintainability:** Changes to the pipeline propagate automatically to all system stages  
+- **Clarity of responsibility:** Clear boundary between model logic and serving infrastructure  
+
+---
+
+## 3. Architecture & Deployment Flow
+
+### 3.1 Runtime Architecture
+
+The system operates as a stateless request–response inference service. Incoming client requests are processed through a layered API stack and passed to the core NLP pipeline.
+
+```text
+Client (browser / script / curl)
+        ↓ HTTP request
+Cloud Run (managed container)
+        ↓
+Uvicorn (ASGI server)
+        ↓
+FastAPI (API framework)
+        ↓
+/predict endpoint
+        ↓
+pipeline.py (core logic)
+        ↓
+Model + deterministic rules
+        ↓
+Structured JSON response → returned to client
+```
+
+This architecture enforces clear separation of concerns:
+
+- Cloud Run → request handling, scaling, infrastructure
+- Uvicorn + FastAPI → API serving layer
+- pipeline.py → all ML and rule-based logic
+
+---
+
+### 3.2 Deployment Flow (CI/CD Pipeline)
+
+The deployment pipeline automates the transition from code changes to a live, updated API service.
+
+```text
+GitHub (code + model via LFS)
+        ↓ push to main
+GitHub Actions (CI/CD)
+        ↓
+Checkout repo + pull LFS files
+        ↓
+Cloud Build
+        ↓
+Docker image build
+        ↓
+Container Registry (gcr.io)
+        ↓
+Cloud Run deployment
+        ↓
+New revision → traffic routed → Live API
+```
+
+Detailed flow:
+
+1. Code is pushed to the `main` branch  
+2. GitHub Actions workflow is triggered  
+3. Repository is checked out (including Git LFS model files)  
+4. Cloud Build builds the Docker image  
+5. Image is pushed to Container Registry (`gcr.io`)  
+6. Cloud Run deploys a new revision using the updated image  
+7. Traffic is automatically routed to the latest revision  
+
+---
+
+### 3.3 Final Architecture Summary
+
+The deployed system consists of the following components:
+
+- **GitHub** → source code and model storage (via Git LFS)  
+- **GitHub Actions** → CI/CD automation pipeline  
+- **Cloud Build** → container image build process  
+- **Container Registry (`gcr.io`)** → image storage  
+- **Cloud Run** → serverless API hosting and scaling  
+
+This setup enables a fully automated and reproducible deployment pipeline, where each code change results in a consistent rebuild and redeployment of the service.
+
+---
+
+## API Usage
+
+Endpoint:
+
+`POST /predict`
+
+Request format: 
+
+```json
+{
+  "text": "HPI: Pt c/o CP and SOB. Assessment: possible pneumonia."
+}
+```
+
+- Input must be a JSON object with a "text" field
+- The value should be a clinical note or report
+
+Input Expectations
+
+The pipeline is designed around clinical note structure (inspired by MIMIC-style data), therefore:
+
+- Text should contain semi-structured clinical language
+- Sections such as HPI, Assessment, Plan improve extraction performance
+- Abbreviations (e.g. SOB, CP) are supported
+- Free-form text is accepted, but structured notes produce more reliable outputs
+
+Example Request:
+
+```bash
+curl -X POST "https://<your-cloud-run-url>/predict" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "HPI: Pt c/o CP and SOB. Assessment: possible pneumonia."
+  }'
+```
+
+Example Response (simplified)
+
+```json
+{
+  "entities": [
+    {
+      "entity_text": "SOB",
+      "concept": "dyspnoea",
+      "entity_type": "SYMPTOM"
+    }
+  ]
+}
+```
+
+---
+
+
+
+2. Deployment Stages (core section)
+
+This is the backbone.
+
+Structure it like this:
+
+⸻
+
+2.1 Local API Validation
+
+* FastAPI run locally
+* Tested via:
+    * /health
+    * /predict
+* Purpose: verify pipeline + model correctness
+
+No deep detail. Just the role.
+
+⸻
+
+2.2 Docker Containerisation
+
+* Dockerfile created
+* Built image locally
+* Ran container locally
+
+Purpose:
+
+* Ensure reproducible environment
+* Match cloud runtime
+
+Important insight:
+
+“Works on my machine” problem eliminated here
+
+⸻
+
+2.3 Cloud Deployment (Google Cloud Run)
+
+* Image built via Cloud Build
+* Deployed to Cloud Run
+* Public URL generated
+
+Validation:
+
+* /health
+* /predict
+
+Important insight:
+
+Transition from local system → externally accessible service
+
+⸻
+
+2.4 CI/CD Automation (GitHub Actions)
+
+* Trigger: push to main
+* Steps:
+    * Checkout + LFS pull
+    * Build container
+    * Deploy to Cloud Run
+
+Purpose:
+
+* Remove manual deployment
+* Ensure reproducibility
+
 
 ---
 
@@ -1078,33 +1333,7 @@ The system is a stateless inference API built using FastAPI.
 - Returns system status  
 - Used for deployment monitoring and uptime checks  
 
----
 
-## 4. System Architecture
-
-Client (browser / script / curl)
-        ↓ HTTP request
-Cloud Run (Google Cloud)
-        ↓
-Uvicorn (web server)
-        ↓
-FastAPI (API framework)
-        ↓
-Your endpoint (/predict)
-        ↓
-pipeline.py (your logic)
-        ↓
-Model + rules
-        ↓
-Return JSON
-        ↑
-FastAPI formats response
-        ↑
-Uvicorn sends HTTP response
-        ↑
-Cloud Run returns to user
-
----
 Real sequence:
 
 1. User sends HTTP request:
@@ -1123,64 +1352,22 @@ run_pipeline(...)
 8. Output returned as JSON
 9. Response sent back to user
 
----
+1. Local setup (clear, reproducible)
 
-## 5. Design Principles
+* install deps
+* run API
+* test endpoint
 
-### 5.1 Minimal Wrapper Design
+2. API usage
 
-The API layer contains no ML logic:
+* input format ({"text": ...})
+* example request
+* example response
 
-- No preprocessing logic duplication  
-- No model handling logic duplication  
-- No transformation logic  
+3. Deployed endpoint
 
-It only orchestrates inference calls.
-
----
-
-### 5.2 Reusability
-
-The same pipeline is used across:
-
-- offline batch generation  
-- evaluation pipeline  
-- deployment API  
-
-This ensures consistency across all system stages.
-
----
-
-### 5.3 Stateless Inference
-
-- No stored state between requests  
-- Each request is independent  
-- Enables horizontal scaling in cloud environments  
-
----
-
-## 6. Infrastructure Stack
-
-### Backend
-
-- Python  
-- FastAPI  
-
-### Server
-
-- Uvicorn  
-
-### Containerisation
-
-- Docker  
-
-### Deployment Target
-
-- Google Cloud Run  
-
-### CI/CD
-
-- GitHub Actions (minimal build + deploy pipeline)
+* live URL
+* same request example
 
 ---
 
@@ -1198,25 +1385,7 @@ The following are NOT included:
 
 ---
 
-## 8. Rationale
-
-This design is chosen to maximise:
-
-### Engineering clarity
-
-- Clean separation between API and ML logic  
-
-### Deployment reliability
-
-- Stateless, containerised service  
-
-### Portfolio signal strength
-
-- Reflects real production ML systems used in industry  
-
-### Maintainability
-
-- Single pipeline reused across all system stages  
+## Ratioanle 
 
 This setup proves:
 
@@ -1272,7 +1441,30 @@ What you are NOT doing:
 
 Those are MLOps components.
 
+This design demonstrates:
+
+- End-to-end ML system deployment (not notebook-only work)  
+- Reproducible environments across development and production  
+- Separation of concerns between inference logic and serving layer  
+- Practical use of containerisation and cloud infrastructure  
+
 ---
+
+## 10. Limitations (Explicit)
+
+Not implemented:
+
+* request logging
+* monitoring
+* model versioning
+* automated retraining
+* drift detection
+
+This is an inference-only deployment.
+
+* Service URL: stable
+* Deployment: persists until changed
+* CI/CD: strategically valuable
 
 What real production systems would add (for context)
 
@@ -1314,94 +1506,15 @@ True MLOps (bigger jump)
 * model versioning
 * drift detection
 
----
 
-3. What this proves (system correctness)
 
-You now have:
 
-Development system
 
-* FastAPI + uvicorn
-* local Python environment
 
-Production-like system
-
-* Docker container
-* isolated dependencies
-* identical runtime to cloud deployment
-
-Inference system
-
-* model loads inside container
-* pipeline executes
-* structured JSON output returned
-
-⸻
-
-4. Important clarification (conceptual)
-
-You are NOT documenting “two systems”.
-
-You are documenting:
-
-one system with two execution modes
-
-* Mode 1: dev server (fast iteration)
-* Mode 2: containerised runtime (deployment parity)
----
-
-## 9. Implementation Order
-
-1. Finalise `run_pipeline()` stability  
-2. Implement FastAPI wrapper (`/predict`, `/health`)  
-3. Build Docker container  
-4. Deploy to Google Cloud Run  
-5. Add minimal CI/CD via GitHub Actions  
 
 ---
 
-1. Local setup (clear, reproducible)
-
-* install deps
-* run API
-* test endpoint
-
-2. API usage
-
-* input format ({"text": ...})
-* example request
-* example response
-
-3. Deployed endpoint
-
-* live URL
-* same request example
-
-4. Input constraints
-
-* ICU-style notes required
-* non-clinical text may return empty
-
----
-
-Key lessons from this failure
-
-1. Build vs runtime are separate problems
-
-* Build issues: .gcloudignore, Docker context
-* Runtime issues: memory, startup, model loading
-
-You resolved both layers.
-
-⸻
-
-2. Cloud constraints matter more than local correctness
-
-Local success does not validate deployment:
-
-* Cloud Run default memory (512MB) was insufficient
-* Model load caused silent container crash
+## Cloud Deployment (Cloud Run)
 
 Service URL: https://clinical-nlp-api-1064509144938.europe-west1.run.app
 
@@ -1424,8 +1537,6 @@ Each deploy creates:
 * etc.
 
 Cloud Run routes traffic to the latest.
-
-Cloud Deployment (Cloud Run)
 
 1. Overview
 
@@ -1567,24 +1678,15 @@ curl -X POST "https://clinical-nlp-api-1064509144938.europe-west1.run.app/predic
 * Reproducible runtime environment
 * External API access
 
-⸻
-
-10. Limitations (Explicit)
-
-Not implemented:
-
-* request logging
-* monitoring
-* model versioning
-* automated retraining
-* drift detection
-
-This is an inference-only deployment.
-
-* Service URL: stable
-* Deployment: persists until changed
-* CI/CD: not required, but strategically valuable
 ---
+
+
+
+
+
+---
+
+## CI/CD
 
 Right now deployment depends on:
 
@@ -1618,22 +1720,17 @@ it’s:
 
 
 ---
-WHY THIS FAILED (simple explanation)
 
-Your pipeline is:
 
-GitHub Actions → Cloud Build → GCR → Cloud Run
 
-You gave permissions for:
 
-* deploying (Run Admin) ✔
-* storage ✔
 
-But forgot:
 
-* building images ❌ (Cloud Build permission)
-* writing images ❌ (Artifact Registry permission)
-* API disabled ❌ (project API gate)
+
+
+
+
+
 ---
 
 What “deployment succeeded” actually means
@@ -1685,42 +1782,150 @@ In a static academic project, it is mostly demonstration value.
 
 
 
----
 
-# Diagrams (Important)
 
-You should include the following diagrams:
 
-### 1. Full Pipeline Diagram (REQUIRED)
 
-Yes — you need this.
 
-It should show:
 
-Raw Text
-↓
-Rule-Based Extraction (High Recall)
-↓
-Candidate Entities
-↓
-Transformer Validation (model_prob)
-↓
-Threshold (0.549)
-↓
-Final Entities (JSON Output)
 
-This is the **most important diagram in your entire project**.
 
----
 
-### 2. Transformer Architecture Diagram (REQUIRED)
 
-- Shows model internals (already planned)
 
----
 
-### 3. Training Pipeline Diagram (REQUIRED)
 
-- Data → training → validation → threshold tuning  
 
----
+
+
+
+
+
+
+
+
+## Critical Issues & Fixes (this is the valuable part)
+
+This is where you capture what you learned. Organise by category, not timeline.
+
+1. Build Context / Docker Issues
+
+* .gcloudignore vs .dockerignore
+* Why models were missing in container
+* Difference between local Docker success vs Cloud Build failure
+
+Key insight:
+Cloud Build only sees files sent in the build context → ignore files directly affect runtime behaviour.
+
+⸻
+
+2. Large Model Handling
+
+* GitHub 100MB limit
+* Git LFS requirement
+* Why CI/CD failed without LFS pull
+* JSON decode error from partial model files
+
+Key insight:
+Without git lfs pull, files exist but are pointers, not actual data → causes runtime crashes.
+
+⸻
+
+3. Cloud Run Runtime Failures
+
+* “Container failed to start on PORT=8080”
+* Root causes:
+    * missing model
+    * insufficient memory
+    * slow startup
+
+Fixes:
+
+* --memory 2Gi
+* --timeout 300
+
+
+Key lessons from this failure
+
+Build vs runtime are separate problems
+
+* Build issues: .gcloudignore, Docker context
+* Runtime issues: memory, startup, model loading
+
+You resolved both layers.
+
+Cloud constraints matter more than local correctness
+
+Local success does not validate deployment:
+
+* Cloud Run default memory (512MB) was insufficient
+* Model load caused silent container crash
+
+⸻
+
+4. CI/CD vs Manual Deployment Mismatch
+
+This is a big one.
+
+You need to explicitly document:
+
+“Manual gcloud run deploy worked, but CI/CD failed due to differences in execution environment.”
+
+Reasons:
+
+* local machine had model files
+* CI/CD depended on GitHub repo state
+* authentication differences
+* build context differences
+
+⸻
+
+5. Cloud Build “False Failure” (important)
+
+This is subtle and very valuable.
+
+Problem:
+
+* Build succeeds in GCP
+* GitHub Actions fails with exit code 1
+
+Cause:
+
+* gcloud builds submit tries to stream logs
+* service account lacks permissions → CLI fails
+
+Fix:
+
+* --async + manual wait loop
+
+Key insight:
+
+CI tools can fail even when underlying infrastructure succeeds.
+
+⸻
+
+6. IAM & Permissions
+
+* service account roles required
+* difference between:
+    * running builds
+    * reading logs
+* why missing permissions caused misleading errors
+
+
+WHY THIS FAILED (simple explanation)
+
+Your pipeline is:
+
+GitHub Actions → Cloud Build → GCR → Cloud Run
+
+You gave permissions for:
+
+* deploying (Run Admin) ✔
+* storage ✔
+
+But forgot:
+
+* building images ❌ (Cloud Build permission)
+* writing images ❌ (Artifact Registry permission)
+* API disabled ❌ (project API gate)
