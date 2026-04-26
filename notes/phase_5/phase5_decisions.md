@@ -1897,7 +1897,9 @@ As a result, the system represents a production-grade inference service, rather 
 
 ### 9.1 Current Scope
 
-As this system is intentionally designed as an inference-only deployment, the following components are not included:
+This system is intentionally designed as a minimal, inference-only deployment.
+
+The following components are not implemented:
 
 - No batch inference endpoint  
 - No database or data persistence  
@@ -1905,35 +1907,60 @@ As this system is intentionally designed as an inference-only deployment, the fo
 - No frontend interface  
 - No feature store  
 
-Additionally, the system does not implement:
+In addition, the system does not include operational MLOps components:
 
-- Request logging  
-- Monitoring or alerting  
-- Model versioning  
-- Automated retraining pipelines  
-- Drift detection  
+- No request logging  
+- No monitoring or alerting  
+- No model versioning  
+- No automated retraining pipelines  
+- No drift detection  
 
-Therefore, it is focused on demonstrating a production-style inference API rather than a full MLOps pipeline:
+As a result, the system:
 
-- The service is suitable for real-time inference but not long-term production monitoring  
-- No historical data is retained for auditing or analysis  
-- Model performance cannot be tracked or updated automatically  
+- Supports real-time inference only  
+- Does not retain historical data for auditing or analysis  
+- Does not track or update model performance in production  
 
 ---
 
-### 9.2 Future Extensions
+### 9.2 Design Trade-offs
 
-A full production ML system would typically introduce:
+These constraints are intentional and reflect a scoped design decision.
 
-- System-level additions:
-  - Request/response logging for traceability  
-  - Monitoring and alerting (latency, error rates)  
-- ML-specific additions:
-  - Input/output distribution tracking for drift detection  
-  - Model versioning and rollback capability  
-  - Automated retraining pipelines  
+Trade-offs:
 
-These extensions fall under full MLOps systems and are beyond the scope of this project.
+- No logging → limited debugging and auditability  
+- No monitoring → no visibility into model drift or degradation  
+- No batching → lower throughput for large-scale processing  
+
+Advantages:
+
+- Simpler system architecture  
+- Faster development and deployment  
+- Clear focus on core inference functionality  
+
+This design is sufficient for demonstrating a production-style inference service, while avoiding the complexity of full MLOps systems.
+
+---
+
+### 9.3 Future Extensions
+
+Potential extensions to move toward a full production system include:
+
+System-level additions:
+
+- Request logging and audit trails  
+- Monitoring and alerting (latency, request volume, error rates)  
+- Authentication and access control  
+
+ML-specific additions:
+
+- Model performance tracking for drift detection  
+- Batch inference endpoints  
+- Automated retraining pipelines  
+- Model versioning  
+
+These additions would extend the system from an inference-only deployment toward a complete MLOps pipeline, enabling monitoring, maintenance, and continuous improvement of model performance in production.
 
 ---
 
