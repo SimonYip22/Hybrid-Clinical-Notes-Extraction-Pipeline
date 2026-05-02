@@ -3397,16 +3397,14 @@ The final system is suitable for generating a high-confidence structured clinica
 
 The end-to-end inference pipeline consolidates the rule-based extraction layer and the trained BioClinicalBERT validation layer into a single reusable system.
 
-This pipeline is used after model development and evaluation to apply the final validated architecture to new clinical notes. It supports:
+This pipeline applies the final validated architecture to new clinical notes and supports:
 
 - Single-report inference
 - Batch inference over multiple notes
 - Large-scale structured dataset generation from the ICU corpus
 - Deployment through an API layer
 
-The inference pipeline does not retrain the model, tune thresholds, or evaluate performance. Those steps are completed earlier. Its role is to apply the final fixed pipeline to unseen clinical text and return structured entity-level outputs.
-
-The operational objective is:
+The inference pipeline does not retrain the model, tune thresholds, or evaluate performance. Those steps are completed earlier. Its role is to apply the fixed extraction + validation system to unseen clinical text and return structured entity-level outputs.
 
 ```text
           Raw clinical note
@@ -3419,22 +3417,10 @@ The operational objective is:
   Structured entity-level JSON output
 ```
 
-
-This section describes how the full system is assembled for inference and how outputs are produced for downstream use.
-
 ##
 ## 12.2 Unified Pipeline Architecture
 
-The inference system follows the same two-stage architecture evaluated in the previous section:
-
-1. **Rule-based extraction**
-    - Generates high-recall candidate entities from clinical text.
-    - Preserves exact spans, concepts, sections, and sentence context.
-2. **Transformer validation**
-    - Scores each candidate entity using the trained BioClinicalBERT classifier.
-    - Applies the calibrated threshold (0.549) to produce a binary validity decision.
-
-The final inference architecture is implemented as a modular pipeline:
+The inference system follows the same two-stage architecture evaluated in the previously. The final inference architecture is implemented as a modular pipeline:
 
 ```text
 src/
@@ -3444,18 +3430,7 @@ src/
     pipeline.py       → orchestration of extraction + validation
 ```
 
-Each module has a single responsibility:
-
-| Module | Responsibility |
-|--------|----------------|
-| `extraction.py` | Runs preprocessing, section parsing, sentence segmentation, and rule-based entity extraction |
-| `validation.py` | Applies BioClinicalBERT to score and validate extracted entities |
-| `pipeline.py` | Orchestrates the complete inference flow and returns structured outputs |
-
-The same pipeline is reused across batch dataset generation and deployment. This avoids separate code paths for research, inference, and API usage.
-
-##
-## 12.3 Inference Flow
+The same pipeline is reused for batch dataset generation and API deployment, preventing divergence between research inference and deployed inference.
 
 ```text
                         Raw Input Data
@@ -3475,28 +3450,25 @@ The same pipeline is reused across batch dataset generation and deployment. This
                               │
                               ▼
                    Candidate Entity Records
-       span + concept + entity type + section + sentence
+       Span + concept + entity type + section + sentence
                               │
                               ▼
                BioClinicalBERT Validation Layer
-       structured input → probability score → thresholding
+       Structured input → probability score → thresholding
                               │
                               ▼
                 Final Structured JSON Output
        Candidate entity + provenance + validation object
 ```
 
-This diagram represents the inference-time system only. It does not include training, cross-validation, threshold tuning, or evaluation logic.
+This diagram represents inference-time logic only. It does not include training, cross-validation, threshold tuning, or evaluation.
 
 ##
-## 12.4 Extraction Component
+## 12.3 Extraction Component
 
-The extraction component `extraction.py` performs deterministic candidate generation using the preprocessing, structural parsing, and rule-based extraction functions defined earlier in the pipeline.
+The extraction component, implemented in `extraction.py`, performs deterministic candidate generation using the preprocessing, structural parsing, and rule-based extraction functions defined earlier.
 
-##
-### Single-Note Extraction
-
-The single-note function processes one clinical note by applying:
+For each note, extraction applies:
 
 1. Text preprocessing
 2. Section extraction
@@ -3512,65 +3484,15 @@ Conceptually:
 extract_entities_from_note(note_text, note_id, metadata)
 ```
 
-This returns a flat list of candidate entities extracted from the note.
-
-Each candidate contains:
-
-- Source identifiers
-- Extracted span
-- Entity type
-- Normalised concept
-- Character offsets
-- Section context
-- Sentence context
-- Placeholder validation fields
-
-##
-### Batch Extraction
-
-Batch extraction processes a DataFrame of notes 
+Batch extraction processes a DataFrame of notes:
 
 ```python
 run_extraction_on_dataframe(df)
 ```
 
-The function iterates over input rows, applies single-note extraction, and aggregates all extracted entities into one flat entity-level list. 
+All inference inputs are standardised as DataFrames. A single report can be wrapped as a one-row DataFrame, while batch and full-corpus inference use multi-row DataFrames. This keeps the extraction code path consistent across single-note, batch, and large-scale use cases.
 
-This design allows the same extraction logic to support:
-
-- A one-row DataFrame for single-note inference
-- A multi-row DataFrame for batch inference
-- A full ICU corpus DataFrame for large-scale dataset generation
-
-Using a DataFrame-based interface ensures that single and batch inference follow the same code path.
-
-##
-## 12.5 Identifier and Metadata Handling
-
-The pipeline separates source identity, optional patient metadata, and derived NLP fields.
-
-##
-### Source Identity
-
-Each input note requires a `note_id` so that extracted entity records can be linked back to their original note. This is especially important because the output is entity-level; one note has many extracted entity records
-
-For large-scale dataset generation, `note_id` is assigned externally before extraction. This prevents identifier resets during chunked processing and keeps outputs reproducible.
-
-##
-### Optional Metadata
-
-The pipeline can pass through optional metadata fields when available:
-
-- `subject_id`
-- `hadm_id`
-- `icustay_id`
-
-If these fields are absent, they are stored as empty values. This allows the same pipeline to operate on both structured MIMIC-IV datasets and raw single-note inputs.
-
-##
-### Derived NLP Fields
-
-Other fields are generated during inference:
+Input metadata fields such as `subject_id`, `hadm_id`, and `icustay_id` are passed through when available. Derived fields are generated during extraction:
 
 | Field | Source |
 |------|--------|
@@ -3581,12 +3503,10 @@ Other fields are generated during inference:
 | `concept` | Rule-based concept mapping |
 | `entity_type` | Entity-specific extractor |
 
-This preserves provenance while keeping the input interface flexible.
-
 ##
-## 12.6 Validation Component
+## 12.4 Validation Component
 
-The validation component `validation.py` applies the trained BioClinicalBERT classifier to extracted candidate entities.
+The validation component, implemented in `validation.py`, applies the trained BioClinicalBERT classifier to extracted candidate entities.
 
 Conceptually:
 
@@ -3602,29 +3522,19 @@ validate_entities(
 )
 ```
 
-The validation workflow is:
+For each entity, the validation stage:
 
-1. Convert each entity into the same structured input format used during training:
-
-    ```text
-    [SECTION] {section}
-    [ENTITY TYPE] {entity_type}
-    [ENTITY] {entity_text}
-    [CONCEPT] {concept}
-    [TASK] {task}
-    [TEXT] {sentence_text}
-    ```
-
-2. Tokenise inputs using the saved BioClinicalBERT tokenizer.
+1. Reconstructs the structured input format used during training
+2. Tokenises inputs using the saved BioClinicalBERT tokenizer.
 3. Run batched inference using the saved BioClinicalBERT model.
-4. Convert logits into valid-class probabilities: `confidence = p(is_valid = 1)`
-5. Apply the calibrated decision threshold: `is_valid = True if confidence ≥ 0.549`
-6. Write validation outputs back into the existing entity structure.
+4. Converts logits into valid-class probabilities: `confidence = p(is_valid = 1)`
+5. Applies the calibrated decision threshold: `is_valid = True if confidence ≥ 0.549`
+6. Writes validation outputs back into the existing entity structure.
 
-The model and tokenizer are passed into the function rather than loaded inside it. This avoids repeated model loading, reduces inference overhead, and supports efficient processing of large datasets.
+The model and tokenizer are passed into the function rather than loaded inside it. This avoids repeated model loading and supports efficient processing of large datasets.
 
 ##
-## 12.7 Pipeline Orchestration
+## 12.5 Pipeline Orchestration
 
 The complete inference pipeline is orchestrated by `pipeline.py`.
 
@@ -3640,9 +3550,7 @@ The function performs:
 2. Transformer validation over extracted entities
 3. Return of structured JSON-compatible entity records
 
-The function does not perform model training, threshold tuning, evaluation, or file saving. These are intentionally handled outside the core inference function.
-
-This separation keeps the pipeline reusable across different use cases:
+The function does not perform model training, threshold tuning, evaluation, or file saving. Those steps are handled externally, keeping the core pipeline reusable, and preventing divergence across between research inference, large-scale generation, and deployed inference.
 
 | Use Case | Pipeline Behaviour |
 |----------|-------------------|
@@ -3651,10 +3559,8 @@ This separation keeps the pipeline reusable across different use cases:
 | Full-corpus generation | Process the ICU corpus in batches/chunks |
 | API deployment | Load model once, then call pipeline per request |
 
-This design prevents divergence between research inference, large-scale generation, and deployed inference.
-
 ##
-## 12.8 Output Schema
+## 12.6 Output Schema
 
 The pipeline returns a flat list of JSON-compatible dictionaries, with one record per extracted entity. A single note may therefore generate multiple output records.
 
@@ -3682,8 +3588,6 @@ Example output:
 }
 ```
 
-The output preserves both rule-based extraction information and transformer-derived validation outputs.
-
 | Output Field | Purpose |
 |--------------|---------|
 | `entity_text` | Exact extracted span |
@@ -3697,52 +3601,162 @@ The output preserves both rule-based extraction information and transformer-deri
 | `validation.confidence` | BioClinicalBERT probability score |
 | `validation.task` | Entity-specific validation task |
 
+The output preserves both the deterministic extraction provenance and the transformer-derived contextual judgement.
+
 ##
-## 12.9 Dataset Strategy
+## 12.7 Dataset Strategy
 
 The pipeline is intentionally non-destructive. It does not remove invalid entities during inference. Instead, it preserves all extracted candidates and attaches validation outputs.
 
-This produces two possible downstream dataset views:
+This supports two downstream dataset views:
 
 | Dataset View | Definition | Use Case | 
 |-------------|------------|---------|
 | Full output dataset | All extracted candidates with validation scores | Auditing, error analysis, threshold review, reproducibility |
 | Filtered valid dataset | Subset where `validation.is_valid == true` | Downstream ML features, high-confidence entity extraction |
 
-This design separates pipeline generation from downstream filtering. The advantage is that downstream users can chnage filtering logic without rerunning extraction and model inference.
-
-For example:
-
-```python
-valid_entities = [
-    entity for entity in entities
-    if entity["validation"]["is_valid"] is True
-]
-```
+This separates pipeline generation from downstream filtering. Downstream users can change filtering logic without rerunning extraction and model inference.
 
 The full output remains available for inspection, debugging, and future threshold recalibration.
 
+---
+
+# 13. Full-Corpus Dataset Generation
+
+## 13.1 Full-Corpus Pipeline Execution
+
+After the end-to-end inference pipeline was finalised, it was applied to the full ICU corpus of **162,296 clinical reports** (`icu_corpus.csv`) to generate a large-scale structured clinical entity dataset.
+
+The purpose of this stage is to demonstrate that the evaluated pipeline can scale beyond sampled development data and produce a reusable structured dataset from the full clinical note corpus.
+
+The output is retained as an entity-level JSONL dataset, with one record per extracted candidate entity and transformer validation fields attached.
+
+##
+## 13.2 Corpus Coverage and Dataset Scale
+
+The pipeline extracted at least one entity from **71,917 reports**, representing **44.31%** of the full ICU corpus.
+
+| Corpus-Level Metric | Value |
+|------|------:|
+| Total reports processed | 162,296 |
+| Reports with ≥1 entity | 71,917 |
+| Reports with entities | 44.31% |
+| Unique subjects processed | 25,054 |
+| Unique subjects with ≥1 entity | 8,621 |
+
+At entity level, the pipeline generated approximately **781K structured entity records**, of which approximately **320K** were accepted by the transformer validation layer.
+
+| Entity-Level Metric | Value |
+|------|------:|
+| Total entities extracted | **780,941** |
+| Mean entities per report with ≥1 entity | 10.86 |
+| Valid entities | **319,852** |
+| Validated entity rate | **40.96%** |
+
+This confirms that the system scales from annotated development data to full-corpus structured dataset generation.
+
+##
+## 13.3 Entity Type Distribution and Validation Rates
+
+| Entity Type | Count | Percentage |
+|------------|------:|-----------:|
+| `INTERVENTION` | 334,872 | 42.88% |
+| `CLINICAL_CONDITION` | 280,314 | 35.89% |
+| `SYMPTOM` | 165,755 | 21.23% |
+
+Interventions were the most frequent entity type, consistent with ICU progress notes frequently documenting active management, therapies, procedures, and care plans. Clinical conditions also formed a large proportion of the dataset, while symptoms were less frequent due to narrower section targeting and concept-level deduplication within sentences.
+
+| Entity Type | Validated Candidates |
+|------------|---------------------:|
+| `INTERVENTION` | **51.76%** |
+| `SYMPTOM` | 36.65% |
+| `CLINICAL_CONDITION` | 30.60% |
+
+Validation rates differ by entity type. Intervention candidates are most often retained because treatment mentions are frequently explicit and action-oriented. Symptom candidates have a lower validation rate because majority of mentions are negatives. Clinical condition candidates have the lowest because diagnostic mentions often include historical, uncertain, resolved, or background conditions.
+
+The generated dataset can be used for auditing and error analysis, or the validated subset for downstream ML and structured clinical feature generation.
 
 ---
 
-## 13. Full-Corpus Dataset Generation
-
-The full dataset was generated only after validation confirmed system reliability.
-
+# 12. Cloud Deployment
 
 
 ---
 
-## 12. Cloud Deployment
+# 13. API Usage 
 
+## 13.1 Endpoint & Input
+
+**Base URL:** https://clinical-nlp-api-1064509144938.europe-west1.run.app
+
+Endpoints: 
+
+- `POST /predict` for running inference
+- `GET /health` for service status check
+
+Request format: 
+
+```json
+{
+  "text": "HPI: Pt c/o CP and SOB. Assessment: possible pneumonia."
+}
+```
+
+Requirements:
+
+- Request must be a JSON object with a `"text"` field
+- Value must be a clinical note or report (string)
+
+The pipeline is designed for structured clinical text (designed based on MIMIC-IV report structure):
+
+- Sections (e.g. `HPI`, `Assessment`, `Plan`) improve extraction quality
+- Specific clinical words and phrases are expected and captured by rules
+- Free-form text is accepted, but structured notes produce more reliable outputs
+
+##
+## 13.2 Example Usage
+
+Example Request:
+
+```bash
+curl -X POST "https://clinical-nlp-api-1064509144938.europe-west1.run.app/predict" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "HPI: Pt c/o CP and SOB. Assessment: possible pneumonia."
+  }'
+```
+
+Example Response (simplified):
+
+```json
+{
+  "entities": [
+    {
+      "note_id":"note_1",
+      "subject_id":"",
+      "hadm_id":"",
+      "icustay_id":"",
+      "entity_text":"SOB",
+      "concept":"dyspnoea",
+      "entity_type":"SYMPTOM",
+      "char_start":14,
+      "char_end":17,
+      "sentence_text":"Pt c/o CP and SOB.",
+      "section":"hpi",
+      "negated":false,
+      "validation": {
+        "is_valid":true,
+        "confidence":0.6005578637123108,
+        "task":"symptom_presence"
+      }
+    }
+  ]
+}
+``` 
 
 ---
 
-## 13. API Usage 
-
----
-
-## 14. Methodological Rationale and Design Reflection
+# 14. Methodological Rationale and Design Reflection
 
 defense of design choices and alignment with project goals
 
