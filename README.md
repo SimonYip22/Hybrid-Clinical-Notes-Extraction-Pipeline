@@ -8,7 +8,7 @@
 
 End-to-end clinical NLP engineering system for transforming unstructured ICU progress notes into structured, auditable clinical entity outputs for downstream analysis and machine-learning workflows.
 
-***Access Live API:*** https://clinical-nlp-api-1064509144938.europe-west1.run.app
+***Access Live API:*** https://clinical-nlp-api-1064509144938.europe-west1.run.app/docs
 
 The pipeline uses a hybrid extraction-validation architecture. Deterministic, section-aware regex rules first extract span-aligned candidate entities from ICU notes across three clinically meaningful categories: `SYMPTOM`, `INTERVENTION`, and `CLINICAL_CONDITION`. This rule-based layer is designed to provide broad candidate coverage, schema control, and exact text provenance. A fine-tuned BioClinicalBERT classifier then validates each candidate in sentence context. This transformer layer handles clinical ambiguity such as intent, negation, temporality, and uncertainty. The model was fine-tuned using **1,200 manually annotated entity examples**, with threshold tuning used to prioritise precision for the final structured outputs.
 
