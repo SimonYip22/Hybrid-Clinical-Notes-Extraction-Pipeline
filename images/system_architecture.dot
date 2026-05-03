@@ -1,73 +1,24 @@
 digraph HybridClinicalNLP {
   rankdir=LR;
   bgcolor="white";
-
-  graph [
-    fontname="Helvetica"
-  ];
-
-  node [
-    shape=rect,
-    style="filled,rounded",
-    fontname="Helvetica",
-    fontsize=12,
-    margin="0.5,0.35",
-    fixedsize=false
-  ];
-
-  edge [
-    fontname="Helvetica",
-    fontsize=11,
-    color="black",
-    fontcolor="black",
-    arrowsize=0.8
-  ];
+  node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.5,0.4", fixedsize=false];
 
   // ---------- INPUT + PREPROCESSING ----------
-  Input [
-    label="Raw Clinical Note\nunstructured ICU progress text",
-    fillcolor="#bab1dbff"
-  ];
-
-  Preprocess [
-    label="Text Preprocessing\nnewline normalisation\nartefact removal\nwhitespace normalisation",
-    fillcolor="#d9e8ff"
-  ];
+  Input [label="Raw Clinical Note\nunstructured ICU progress text", fillcolor="#bab1dbff"];
+  Preprocess [label="Text Preprocessing\nnewline normalisation\nartefact removal\nwhitespace normalisation", fillcolor="#d9e8ff"];
 
   { rank = same; Input; Preprocess; }
-
-  // In rankdir=LR, same-rank nodes are stacked vertically.
-  Input -> Preprocess [
-    style=invis,
-    constraint=false,
-    weight=100
-  ];
+  Input -> Preprocess [style=invis, constraint=false, weight=100];
 
   // ---------- STRUCTURAL PARSING ----------
   subgraph cluster_parsing {
     label="Structural Parsing";
     style="rounded";
     color="black";
-    fontname="Helvetica";
-    fontsize=12;
+    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.3,0.2"];
 
-    node [
-      shape=rect,
-      style="filled,rounded",
-      fontname="Helvetica",
-      fontsize=12,
-      margin="0.35,0.25"
-    ];
-
-    Sections [
-      label="Section Detection\ncanonical clinical headers\nsection-level context",
-      fillcolor="#d7ecff"
-    ];
-
-    Sentences [
-      label="Sentence Segmentation\noffset-preserving\nsentence units",
-      fillcolor="#d7ecff"
-    ];
+    Sections [label="Section Detection\ncanonical clinical headers\nsection-level context", fillcolor="#d7ecff", margin="0.4,0.4", fixedsize=false];
+    Sentences [label="Sentence Segmentation\noffset-preserving\nsentence units", fillcolor="#d7ecff", margin="0.4,0.4", fixedsize=false];
 
     { rank = same; Sections; Sentences; }
   }
@@ -77,119 +28,50 @@ digraph HybridClinicalNLP {
     label="Rule-Based Candidate Extraction";
     style="rounded";
     color="black";
-    fontname="Helvetica";
-    fontsize=12;
+    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.3,0.2"];
 
-    node [
-      shape=rect,
-      style="filled,rounded",
-      fontname="Helvetica",
-      fontsize=12,
-      margin="0.35,0.25"
-    ];
-
-    SymptomRules [
-      label="SYMPTOM Rules\nsymptom mentions\nnegation signal\ncandidate generation",
-      fillcolor="#b0d4f8"
-    ];
-
-    InterventionRules [
-      label="INTERVENTION Rules\nprocedure mentions\ntreatment actions\ncandidate generation",
-      fillcolor="#b0d4f8"
-    ];
-
-    ConditionRules [
-      label="CLINICAL_CONDITION Rules\ndisease-state mentions\ncondition concepts\ncandidate generation",
-      fillcolor="#b0d4f8"
-    ];
+    SymptomRules [label="SYMPTOM Rules\nsymptom mentions\nnegation signal\ncandidate generation", fillcolor="#b0d4f8", margin="0.4,0.4", fixedsize=false];
+    InterventionRules [label="INTERVENTION Rules\nprocedure mentions\ntreatment actions\ncandidate generation", fillcolor="#b0d4f8", margin="0.4,0.4", fixedsize=false];
+    ConditionRules [label="CLINICAL_CONDITION Rules\ndisease-state mentions\ncondition concepts\ncandidate generation", fillcolor="#b0d4f8", margin="0.4,0.4", fixedsize=false];
 
     { rank = same; SymptomRules; InterventionRules; ConditionRules; }
   }
 
   // ---------- CANDIDATE SCHEMA ----------
-  CandidateSchema [
-    label="Candidate Entity Schema\nentity text + concept\nspan offsets + section\nsentence context + task",
-    fillcolor="#e6eaccff"
-  ];
+  CandidateSchema [label="Candidate Entity Schema\nentity text + concept\nspan offsets + section\nsentence context + task", fillcolor="#e6eaccff"];
 
   // ---------- TRANSFORMER VALIDATION ----------
   subgraph cluster_validation {
     label="Transformer Contextual Validation";
     style="rounded";
     color="black";
-    fontname="Helvetica";
-    fontsize=12;
+    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.3,0.2"];
 
-    node [
-      shape=rect,
-      style="filled,rounded",
-      fontname="Helvetica",
-      fontsize=12,
-      margin="0.35,0.25"
-    ];
-
-    BertInput [
-      label="Validation Input\nsentence + entity + concept\nsection + entity type + task",
-      fillcolor="#ffd9b3"
-    ];
-
-    BioBERT [
-      label="BioClinicalBERT Classifier\ncontextual binary validation\nis_valid probability",
-      fillcolor="#ffd9b3"
-    ];
-
-    Threshold [
-      label="Thresholding\nprecision-oriented\nfinal decision rule",
-      fillcolor="#ffd9b3"
-    ];
+    BertInput [label="Validation Input\nsentence + entity + concept\nsection + entity type + task", fillcolor="#ffd9b3", margin="0.4,0.4", fixedsize=false];
+    BioBERT [label="BioClinicalBERT Classifier\ncontextual binary validation\nis_valid probability", fillcolor="#ffd9b3", margin="0.4,0.4", fixedsize=false];
+    Threshold [label="Thresholding\nprecision-oriented\nfinal decision rule", fillcolor="#ffd9b3", margin="0.4,0.4", fixedsize=false];
 
     { rank = same; BertInput; BioBERT; Threshold; }
   }
 
   // ---------- OUTPUTS ----------
-  Validated [
-    label="Validated Entity Output\nis_valid + confidence\nretained structured entities",
-    fillcolor="#c9f7e5"
-  ];
+  Validated [label="Validated Entity Output\nis_valid + confidence\nretained structured entities", fillcolor="#c9f7e5"];
 
   subgraph cluster_outputs {
     label="Pipeline Outputs";
     style="rounded";
     color="black";
-    fontname="Helvetica";
-    fontsize=12;
+    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.3,0.2"];
 
-    node [
-      shape=rect,
-      style="filled,rounded",
-      fontname="Helvetica",
-      fontsize=12,
-      margin="0.35,0.25"
-    ];
-
-    JSON [
-      label="Structured JSON / JSONL\nmachine-readable\nentity-level outputs",
-      fillcolor="#c3f0c3"
-    ];
-
-    Batch [
-      label="Offline Batch Pipeline\nfull-corpus processing\nstructured dataset generation",
-      fillcolor="#c3f0c3"
-    ];
-
-    API [
-      label="FastAPI Inference API\nstateless request-response\nsingle-note inference",
-      fillcolor="#c3f0c3"
-    ];
+    JSON [label="Structured JSON / JSONL\nmachine-readable\nentity-level outputs", fillcolor="#c3f0c3", margin="0.4,0.4", fixedsize=false];
+    Batch [label="Offline Batch Pipeline\nfull-corpus processing\nstructured dataset generation", fillcolor="#c3f0c3", margin="0.4,0.4", fixedsize=false];
+    API [label="FastAPI Inference API\nstateless request-response\nsingle-note inference", fillcolor="#c3f0c3", margin="0.4,0.4", fixedsize=false];
 
     { rank = same; JSON; Batch; API; }
   }
 
   // ---------- DEPLOYMENT ----------
-  Deploy [
-    label="Containerised Cloud Serving\nDocker + Google Cloud Run\nGitHub Actions CI/CD",
-    fillcolor="#d9f7d9"
-  ];
+  Deploy [label="Containerised Cloud Serving\nDocker + Google Cloud Run\nGitHub Actions CI/CD", fillcolor="#d9f7d9"];
 
   // ---------- MAIN EDGES ----------
   Input -> Preprocess [constraint=false];
@@ -211,13 +93,8 @@ digraph HybridClinicalNLP {
   API -> Deploy;
 
   // ---------- INSET ----------
-  inset [
-    label="Design Principle\nRules generate candidate spans\nTransformer validates clinical context",
-    shape=note,
-    fontsize=12,
-    fontname="Helvetica"
-  ];
+  inset [label="Design Principle\nRules generate candidate spans\nTransformer validates clinical context", shape=note, fontsize=12];
 
-  inset -> SymptomRules [style=dashed, color="black"];
-  inset -> BioBERT [style=dashed, color="black"];
+  inset -> SymptomRules [style=dashed, color="#aaaaaa"];
+  inset -> BioBERT [style=dashed, color="#aaaaaa"];
 }
