@@ -1,20 +1,36 @@
 # Hybrid Clinical Notes Extraction Pipeline
 
-***Precision-First Natural Language Processing System Using Deterministic Regex-Based Entity Extraction with BioClinicalBERT Classifier Validation for Structuring Clinical Notes***
+***Precision-First Clinical NLP System Using Rule-Based Entity Extraction with BioClinicalBERT Validation for Structuring ICU Reports***
 
 ---
 
 # Executive Summary
 
-**Tech stack:** Python, PyTorch, HuggingFace Transformers, scikit-learn, FastAPI, Docker, Google Cloud Run
+End-to-end clinical NLP engineering system for transforming unstructured ICU progress notes into structured, auditable clinical entity outputs for downstream analysis and machine-learning workflows.
 
-A hybrid clinical NLP pipeline for converting unstructured ICU progress notes into structured, auditable, entity-level JSON outputs for downstream analysis and machine learning.
+***Access Live API:*** `https://clinical-nlp-api-1064509144938.europe-west1.run.app`
 
-The pipeline processes a filtered ICU note corpus of 162,296 reports across 32,910 ICU stays and extracts three clinically meaningful entity types: symptoms, interventions, and active clinical conditions. Candidate entities are generated using deterministic, section-aware regex rules, then validated using a fine-tuned BioClinicalBERT classifier to handle contextual ambiguity such as negation, temporality, intent, and clinical relevance.
+The pipeline uses a hybrid extraction-validation architecture. Deterministic, section-aware regex rules first extract span-aligned candidate entities from ICU notes across three clinically meaningful categories: `SYMPTOM`, `INTERVENTION`, and `CLINICAL_CONDITION`. This rule-based layer is designed to provide broad candidate coverage, schema control, and exact text provenance. A fine-tuned BioClinicalBERT classifier then validates each candidate in sentence context. This transformer layer handles clinical ambiguity such as intent, negation, temporality, and uncertainty. The model was fine-tuned using **1,200 manually annotated entity examples**, with threshold tuning used to prioritise precision for the final structured outputs.
 
-The system is designed around a precision-first final output objective: rules provide span-level provenance and schema control, while transformer validation filters false positives before structured dataset generation. The final pipeline supports both large-scale offline dataset generation and real-time API inference through a deployed FastAPI service.
+The system was developed on a filtered PhysioNet MIMIC-IV ICU note corpus of **162,296 progress reports across 32,910 ICU stays**. Full-corpus execution generated **780,941 candidate entities**, of which **319,852** were retained as clinically valid after transformer validation (**40.96% retained**).
 
-This project focuses on classical clinical NLP pipeline engineering, auditable information extraction, and downstream ML feature generation. It does not attempt full clinical ontology mapping, medication/lab/vital extraction, interoperability-standard integration, or clinical decision automation.
+Compared with the rule-based baseline, BioClinicalBERT validation substantially improved precision and reduced false positives, while lowering recall due to stricter filtering. Precision increased from **0.571 to 0.833** (+45.9% relative improvement), and false positives decreased from **66 to 11** (-83.3%).
+
+The final system supports both large-scale offline corpus processing and real-time inference through a stateless FastAPI service, containerised with Docker and deployed on Google Cloud Run. GitHub Actions CI/CD automates reproducible deployment updates. 
+
+This work is research-focused and is not a live clinical decision-support system or regulatory-validated medical device.
+
+| System | Precision | Recall | F1-Score | False Positives | Interpretation |
+|--------|----------:|-------:|---------:|----------------:|----------------|
+| Rule-based baseline | 0.571 | **0.989** | **0.724** | 66 | Broad candidate generation with near-complete recall but high noise |
+| BioClinicalBERT validation | **0.833** | 0.618 | 0.710 | **11** | Cleaner final outputs with substantially fewer false positives |
+| Change | **+0.262** | -0.371 | -0.014 | **-55** | Precision improved substantially; recall loss reflects conservative filtering |
+
+![Hybrid Clinical NLP Pipeline Architecture](images/system_architecture.png)
+
+_Figure: End-to-end hybrid extraction-validation architecture_
+
+**Technical stack:** Python, PyTorch, HuggingFace Transformers, scikit-learn, pandas, FastAPI, Docker, Google Cloud Run, GitHub Actions
 
 ---
 
@@ -233,8 +249,8 @@ The pipeline separates extraction from validation.
 
 | Component | Role | Output |
 |-----------|------|--------|
-| Rule-based extraction | Defines the extraction space by identifying candidate entity spans deterministically | High-recall; candidate entities with provenance |
-| BioClinicalBERT validation | Defines the validation decision by classifying whether candidates are valid in sentence context | High-precision; validated entities with confidence scores |
+| Rule-based extraction | Defines the extraction space by identifying candidate entity spans deterministically | Candidate entities with provenance |
+| BioClinicalBERT validation | Defines the validation decision by classifying whether candidates are valid in sentence context | Validated entities with confidence scores |
 
 This separation preserves deterministic span provenance while using the transformer only for contextual interpretation.
 
@@ -245,14 +261,6 @@ The three extracted entity types are:
 | `SYMPTOM`    | Determine whether the symptom is present rather than negated, historical, or absent |
 | `INTERVENTION` | Determine whether the intervention was performed rather than planned, suggested, or hypothetical |
 | `CLINICAL_CONDITION` | Determine whether the condition is active rather than historical, resolved, uncertain, or ruled out |
-
-The role of each layer differs by entity type:
-
-| Entity Type   | Rule Strength | Transformer Role        |
-|---------------|--------------|------------------------|
-| `SYMPTOM`       | Strong       | Refinement             |
-| `INTERVENTION`  | weak     | Primary classification    |
-| `CLINICAL_CONDITION`  | Weak   | Primary classification |
 
 ##
 ## 3.4 Output Format
