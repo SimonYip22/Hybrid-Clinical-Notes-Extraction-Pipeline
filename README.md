@@ -2,6 +2,8 @@
 
 ***Precision-First Clinical NLP System Using Rule-Based Entity Extraction with BioClinicalBERT Validation for Structuring ICU Reports***
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20018309.svg)](https://doi.org/10.5281/zenodo.20018309)
+
 ---
 
 # Executive Summary
@@ -4566,15 +4568,24 @@ Copyright © 2026 Simon Yip. All rights reserved.
 
 # 25. Citation
 
-If you use or reference this project, please cite the GitHub repository:
+If you use this repository or its models as part of your work, please cite the official Zenodo publication
+
+AHA:
+
+```markdown
+Yip, S. (2026). Hybrid Clinical Notes Extraction Pipeline (1.0.0). Zenodo. 
+https://doi.org/10.5281/zenodo.20018309
+```
+
+BibTeX for LaTeX users:
 
 ```bibtex
-@software{yip_2026_extraction_pipeline,
+@software{yip-2026-nlp-extraction-pipeline,
   author = {Simon Yip},
   title = {Hybrid Clinical Notes Extraction Pipeline},
-  url = {https://github.com/SimonYip22/Hybrid-Clinical-Notes-Extraction-Pipeline},
+  url = {https://doi.org/10.5281/zenodo.20018309},
   year = {2026},
-  note = {GitHub repository}
+  publisher = {Zenodo}
 }
 ```
 
@@ -4586,11 +4597,11 @@ If you use or reference this project, please cite the GitHub repository:
 
 This project uses data derived from the MIMIC-IV database. MIMIC-IV access is controlled through PhysioNet, and raw clinical data is not redistributed in this repository.
 
-- Johnson, A. E. W., Bulgarelli, L., Shen, L., et al. (2023). *MIMIC-IV, a freely accessible electronic health record dataset*. Scientific Data, 10, 1. https://doi.org/10.1038/s41597-022-01899-x
+- Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). MIMIC-IV (version 3.1). PhysioNet. RRID:SCR_007345. https://doi.org/10.13026/kpb9-mt58
 
-- Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). *MIMIC-IV* (version 3.1). PhysioNet. RRID:SCR_007345. https://doi.org/10.13026/kpb9-mt58
+- Johnson, A.E.W., Bulgarelli, L., Shen, L. et al. MIMIC-IV, a freely accessible electronic health record dataset. Sci Data 10, 1 (2023). https://doi.org/10.1038/s41597-022-01899-x
 
-- Goldberger, A. L., Amaral, L. A. N., Glass, L., Hausdorff, J. M., Ivanov, P. C., Mark, R. G., Mietus, J. E., Moody, G. B., Peng, C. K., & Stanley, H. E. (2000). PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals. *Circulation*, 101(23), e215–e220.
+- Goldberger, A., Amaral, L., Glass, L., Hausdorff, J., Ivanov, P. C., Mark, R., ... & Stanley, H. E. (2000). PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals. Circulation [Online]. 101 (23), pp. e215–e220. RRID:SCR_007345.
 
 ### Related Prior Work
 
