@@ -45,7 +45,7 @@ _Figure: End-to-end hybrid extraction-validation architecture_
    - [1.1 Clinical Data in EHR Systems](#11-clinical-data-in-ehr-systems)
    - [1.2 The Role of Clinical NLP](#12-the-role-of-clinical-nlp)
    - [1.3 Current System Paradigms in Clinical NLP](#13-current-system-paradigms-in-clinical-nlp)
-   - [1.4 Design Motivation and Project Positioning](#14-design-motivation-and-project-positioning)
+   - [1.4 Design Motivation & Project Positioning](#14-design-motivation--project-positioning)
 2. [Project Goals & Contributions](#2-project-goals--contributions)
    - [2.1 Primary Objectives](#21-primary-objectives)
    - [2.2 Key Technical Contributions](#22-key-technical-contributions)
@@ -89,8 +89,84 @@ _Figure: End-to-end hybrid extraction-validation architecture_
    - [9.5 Why Transformer Encoders](#95-why-transformer-encoders)
    - [9.6 Encoder-Based Models vs Generative LLMs](#96-encoder-based-models-vs-generative-llms)
    - [9.7 Why Fine-Tuning Rather than Training from Scratch](#97-why-fine-tuning-rather-than-training-from-scratch)
-
-
+   - [9.8 Candidate Encoder Models & Domain Alignment](#98-candidate-encoder-models--domain-alignment)
+   - [9.9 Final Model Choice: BioClinicalBERT](#99-final-model-choice-bioclinicalbert)
+10. [Transformer-Based Validation Layer](#10-transformer-based-validation-layer)
+    - [10.1 Validation Overview](#101-validation-overview)
+    - [10.2 Annotation Dataset Construction](#102-annotation-dataset-construction)
+    - [10.3 Manual Annotation Framework](#103-manual-annotation-framework)
+    - [10.4 Dataset Splitting Strategy](#104-dataset-splitting-strategy)
+    - [10.5 Fine-Tuning Setup](#105-fine-tuning-setup)
+    - [10.6 Cross-Validation & Model Selection](#106-cross-validation--model-selection)
+    - [10.7 Threshold Optimisation Using Out-of-Fold Predictions](#107-threshold-optimisation-using-out-of-fold-predictions)
+    - [10.8 Final Model Training & Artifact Saving](#108-final-model-training--artifact-saving)
+    - [10.9 Development Refinement](#109-development-refinement)
+11. [Evaluation](#11-evaluation)
+    - [11.1 Evaluation Objective](#111-evaluation-objective)
+    - [11.2 Evaluation Design](#112-evaluation-design)
+    - [11.3 Two-Layer Evaluation Structure](#113-two-layer-evaluation-structure)
+    - [11.4 Evaluation Prediction Dataset](#114-evaluation-prediction-dataset)
+    - [11.5 Metric Selection & Rationale](#115-metric-selection--rationale)
+    - [11.6 Confusion Matrix Rationale](#116-confusion-matrix-rationale)
+    - [11.7 Evaluation Implementation](#117-evaluation-implementation)
+    - [11.8 Core System Evaluation](#118-core-system-evaluation)
+    - [11.9 Stratified & Diagnostic Evaluation](#119-stratified--diagnostic-evaluation)
+    - [11.10 Overall Evaluation Summary](#1110-overall-evaluation-summary)
+12. [End-to-End Inference Pipeline](#12-end-to-end-inference-pipeline)
+    - [12.1 Purpose & Scope](#121-purpose--scope)
+    - [12.2 Unified Pipeline Architecture](#122-unified-pipeline-architecture)
+    - [12.3 Extraction Component](#123-extraction-component)
+    - [12.4 Validation Component](#124-validation-component)
+    - [12.5 Pipeline Orchestration](#125-pipeline-orchestration)
+    - [12.6 Output Schema](#126-output-schema)
+    - [12.7 Dataset Strategy](#127-dataset-strategy)
+13. [Full-Corpus Dataset Generation](#13-full-corpus-dataset-generation)
+    - [13.1 Full-Corpus Pipeline Execution](#131-full-corpus-pipeline-execution)
+    - [13.2 Corpus Coverage and Dataset Scale](#132-corpus-coverage-and-dataset-scale)
+    - [13.3 Entity Type Distribution & Validation Rates](#133-entity-type-distribution--validation-rates)
+14. [Deployment](#14-deployment)
+    - [14.1 Deployment Overview](#141-deployment-overview)
+    - [14.2 API Serving Layer](#142-api-serving-layer)
+    - [14.3 Runtime Architecture](#143-runtime-architecture)
+    - [14.4 Containerisation & Cloud Hosting](#144-containerisation--cloud-hosting)
+    - [14.5 CI/CD Automation](#145-cicd-automation)
+    - [14.6 Deployment Components](#146-deployment-components)
+    - [14.7 Deployment Artifacts](#147-deployment-artifacts)
+15. [API Usage Guide](#15-api-usage-guide)
+    - [15.1 Endpoint & Input](#151-endpoint--input)
+    - [15.2 Example Usage](#152-example-usage)
+16. [Methodological Rationale & Design Reflection](#16-methodological-rationale--design-reflection)
+    - [16.1 Purpose of the Hybrid Design](#161-purpose-of-the-hybrid-design)
+    - [16.2 Key Design Constraints & Trade-offs](#162-key-design-constraints--trade-offs)
+    - [16.3 Why Precision Was Prioritised](#163-why-precision-was-prioritised)
+    - [16.4 Consequences for System Performance](#164-consequences-for-system-performance)
+    - [16.5 Core Insights & Practical Implications](#165-core-insights--practical-implications)
+17. [Limitations](#17-limitations)
+    - [17.1 Overview](#171-overview)
+    - [17.2 Data & Generalisability](#172-data--generalisability)
+    - [17.3 Extraction & Validation Limitations](#173-extraction--validation-limitations)
+    - [17.4 Evaluation Limitations](#174-evaluation-limitations)
+    - [17.5 Scope & Output Limitations](#175-scope--output-limitations)
+    - [17.6 Deployment & Clinical Integration Limitations](#176-deployment--clinical-integration-limitations)
+18. [Future Work](#18-future-work)
+    - [18.1 Overview & Rationale](#181-overview--rationale)
+    - [18.2 Validation & Model Improvements](#182-validation--model-improvements)
+    - [18.3 Annotation & Evaluation Enhancements](#183-annotation--evaluation-enhancements)
+    - [18.4 Schema, Context, & Downstream Modelling](#184-schema-context--downstream-modelling)
+    - [18.5 Deployment & MLOps Extensions](#185-deployment--mlops-extensions)
+19. [Potential Clinical & Research Integration](#19-potential-clinical--research-integration)
+    - [19.1 Downstream Use Cases](#191-downstream-use-cases)
+    - [19.2 Integration With Downstream Modelling](#192-integration-with-downstream-modelling)
+    - [19.3 Practical Integration Pathway](#193-practical-integration-pathway)
+20. [Repository Structure](#20-repository-structure)
+21. [Local Setup & Reproduction](#21-local-setup--reproduction)
+    - [21.1 Run the API Locally](#211-run-the-api-locally)
+    - [21.2 Full Pipeline Reproduction](#212-full-pipeline-reproduction)
+22. [Requirements & Dependencies](#22-requirements--dependencies)
+23. [License](#23-license)
+24. [Copyright](#24-copyright)
+25. [Citation](#25-citation)
+26. [Acknowledgements](#26-acknowledgements)
 
 </details>
 
@@ -169,7 +245,7 @@ This project adopts a hybrid design because it requires:
 - Efficient use of a limited manually annotated dataset  
 
 ##
-## 1.4 Design Motivation and Project Positioning
+## 1.4 Design Motivation & Project Positioning
 
 ### Design Constraints
 
@@ -461,7 +537,7 @@ A combination of manual inspection (n=30) and quantitative sampling (n=500), inc
 
 - Notes exhibit consistent section-based structure (e.g. colon headers, system-based sections)
 - Numeric clinical data (e.g. vitals, labs) is highly prevalent
-- Artefacts follow predictable patterns ( e.g. `[** ... **]` de-identification markers, EMR artefacts, Javascript/link fragments)
+- Artefacts follow predictable patterns ( e.g. `[** ... **]` de-identification markers, EMR artifacts, Javascript/link fragments)
 - Structural variability exists but remains bounded
 
 These findings provided positive structural confirmation that rule-based candidate extraction was feasible and informed the design of the downstream NLP pipeline.
@@ -473,7 +549,7 @@ These findings provided positive structural confirmation that rule-based candida
 ## 5.1 Preprocessing Overview
 
 The preprocessing stage performs minimal, deterministic normalization of ICU clinical notes to stabilise text for downstream structural parsing and rule-based extraction.
-Transformations are strictly limited to removing artefacts identified in Phase 1 that interfere with parsing, while preserving clinical meaning, numeric content, and document structure.
+Transformations are strictly limited to removing artifacts identified in Phase 1 that interfere with parsing, while preserving clinical meaning, numeric content, and document structure.
 
 ##
 ## 5.2 Implementation
@@ -484,12 +560,12 @@ The preprocessing pipeline `preprocessing.py` applies the following steps:
    Standardises line breaks (`\r`, `\r\n` → `\n`) to ensure consistent line-based parsing for section detection.
 
 2. **De-identification Removal**  
-   Removes all `[** ... **]` tokens. These are systematic artefacts introduced during de-identification and do not contribute to clinical content. Minor sentence disruption may occur but does not affect downstream extraction.
+   Removes all `[** ... **]` tokens. These are systematic artifacts introduced during de-identification and do not contribute to clinical content. Minor sentence disruption may occur but does not affect downstream extraction.
 
 3. **Whitespace Normalisation**  
    Collapses multiple spaces and tabs into a single space to stabilise token alignment and prevent inconsistencies during rule-based matching.
 
-4. **Removal of EMR Trailing Artefacts**  
+4. **Removal of EMR Trailing Artifacts**  
    Strips non-clinical end-of-document content (e.g., `References` sections, JavaScript fragments, or EMR metadata) while preserving all preceding clinical text.
 
 ##
@@ -500,7 +576,7 @@ The preprocessing pipeline `preprocessing.py` applies the following steps:
 - **Determinism:** Output is fully reproducible and consistent across runs  
 - **Extraction Compatibility:** Output format is optimised for downstream segmentation and rule-based extraction  
 
-Preprocessing was manually validated on a representative sample to confirm that artefacts are removed while preserving structural integrity and extractable clinical content.
+Preprocessing was manually validated on a representative sample to confirm that artifacts are removed while preserving structural integrity and extractable clinical content.
 
 ---
 
@@ -1448,7 +1524,7 @@ Training a transformer from scratch would require large text corpora for self-su
 Fine-tuning a pretrained clinical model is more appropriate because it allows the model to leverage existing clinical language understanding while learning task-specific decision boundaries for entity validation. This is more efficient, requires less data, and is better aligned with the project constraint of limited annotated training data.
 
 ##
-## 9.8 Candidate Encoder Models and Domain Alignment
+## 9.8 Candidate Encoder Models & Domain Alignment
 
 Several pretrained encoder models were considered.
 
@@ -1508,9 +1584,9 @@ The final modelling strategy preserves deterministic extraction for span control
 
 ---
 
-# 10. Validation Layer: Transformer-Based Classifier
+# 10. Transformer-Based Validation Layer
 
-## 10.1 Validation Layer Overview
+## 10.1 Validation Overview
 
 The transformer validation layer receives candidate entities from the rule-based extraction layer and classifies whether each candidate is clinically valid within its sentence context. This converts the pipeline from deterministic candidate generation into context-aware validated extraction.
 
@@ -1844,7 +1920,7 @@ f(section + entity + task + sentence context) → valid / invalid
 ```
 
 ##
-## 10.6 Cross-Validation and Model Selection
+## 10.6 Cross-Validation & Model Selection
 
 ### Cross-Validation Strategy
 
@@ -2037,7 +2113,7 @@ The workflow:
 The models trained during cross-validation are discarded after evaluation. The selected configuration is then used to train the final BioClinicalBERT validation model on the full training set.
 
 ##
-## 10.7 Threshold Optimisation Using Out-of-Fold (OOF) Predictions
+## 10.7 Threshold Optimisation Using Out-of-Fold Predictions
 
 ### Thresholding Rationale
 
@@ -2233,7 +2309,7 @@ Final outputs:
 
 
 ##
-## 10.8 Final Model Training and Artefact Saving
+## 10.8 Final Model Training & Artifact Saving
 
 ### Final Training Objective
 
@@ -2712,7 +2788,7 @@ Training metadata:
 
 - `training_args.bin` → Serialized training configuration from the `Trainer` API (hyperparameters, scheduling, etc.)
 
-These artefacts define a self-contained model package that can be loaded for evaluation, inference, or deployment:
+These artifacts define a self-contained model package that can be loaded for evaluation, inference, or deployment:
 
 ```python
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -2744,7 +2820,7 @@ The workflow is:
 9. Train using the selected advanced configuration
 10. Save the final model, tokenizer, configuration, and training metadata
 
-At this stage, the validation layer consists of a saved BioClinicalBERT classifier, tokenizer, training configuration, and calibrated decision threshold. These artefacts are used in the downstream evaluation and inference stages to assign contextual validity scores to rule-generated candidate entities.
+At this stage, the validation layer consists of a saved BioClinicalBERT classifier, tokenizer, training configuration, and calibrated decision threshold. These artifacts are used in the downstream evaluation and inference stages to assign contextual validity scores to rule-generated candidate entities.
 
 ##
 ## 10.9 Development Refinement 
@@ -2925,7 +3001,7 @@ model_pred = 1 if model_prob ≥ 0.549 else 0
 These predictions represent the final validation output of the pipeline.
 
 ##
-### 11.5 Metric Selection and Rationale
+## 11.5 Metric Selection & Rationale
 
 Evaluation uses four core metrics.
 
@@ -3180,7 +3256,7 @@ Generated plots:
 - `transformer_confusion_matrix.png`
 
 ##
-## 11.9 Stratified and Diagnostic Analysis
+## 11.9 Stratified & Diagnostic Analysis
 
 ### Purpose of Secondary Analysis
 
@@ -3362,7 +3438,7 @@ The script uses `outputs/evaluation/pipeline_predictions.csv` to generate:
 Outputs are saved to `outputs/evaluation/` and plots are saved to `/secondary_plots/`.
 
 ##
-## 11.10 Overall Evaluation Synthesis
+## 11.10 Overall Evaluation Summary
 
 The evaluation demonstrates that the pipeline behaves as a precision-oriented clinical entity extraction system, but with important entity-specific differences.
 
@@ -3415,7 +3491,7 @@ The final system is suitable for generating a high-confidence structured clinica
 
 # 12. End-to-End Inference Pipeline
 
-## 12.1 Purpose and Scope
+## 12.1 Purpose & Scope
 
 The end-to-end inference pipeline consolidates the rule-based extraction layer and the trained BioClinicalBERT validation layer into a single reusable system.
 
@@ -3678,7 +3754,7 @@ At entity level, the pipeline generated approximately **781K structured entity r
 This confirms that the system scales from annotated development data to full-corpus structured dataset generation.
 
 ##
-## 13.3 Entity Type Distribution and Validation Rates
+## 13.3 Entity Type Distribution & Validation Rates
 
 | Entity Type | Count | Percentage |
 |------------|------:|-----------:|
@@ -3792,7 +3868,7 @@ This separation keeps deployment logic distinct from model and pipeline logic. T
 
 ##
 
-## 14.4 Containerisation and Cloud Deployment
+## 14.4 Containerisation & Cloud Hosting
 
 The API is containerised using Docker and deployed to Google Cloud Run.
 
@@ -3891,7 +3967,7 @@ No credentials are stored in the codebase. Google Cloud authentication is handle
 Together, these components form a complete deployment pipeline where source changes can be converted into a new live API revision through an automated build-and-deploy workflow.
 
 ##
-## 14.7 Deployment Artefacts
+## 14.7 Deployment Artifacts
 
 The deployment layer is defined by the following files:
 
@@ -3918,13 +3994,13 @@ requirements-api.txt         # API/runtime dependencies
 .gitattributes               # Git LFS model tracking
 ```
 
-Together, these artefacts define how the system is built, packaged, served, and redeployed.
+Together, these artifacts define how the system is built, packaged, served, and redeployed.
 
 The final deployment demonstrates that the project is not only a local modelling pipeline, but a deployable clinical NLP inference service with reproducible containerisation, automated cloud deployment, and a public HTTP interface.
 
 ---
 
-# 15. API Usage 
+# 15. API Usage Guide
 
 This section shows how to use the deployed Cloud Run API. For local setup and full reproduction, see Section 21.
 
@@ -4000,7 +4076,7 @@ Example Response (simplified):
 
 ---
 
-# 16. Methodological Rationale and Design Reflection
+# 16. Methodological Rationale & Design Reflection
 
 ## 16.1 Purpose of the Hybrid Design
 
@@ -4013,7 +4089,7 @@ The rule-based layer provides span provenance and schema control. The transforme
 The result is a pipeline-centric design rather than a model-centric design: BioClinicalBERT is used as one controlled validation component within a broader clinical information extraction system.
 
 ##
-## 16.2 Key Design Constraints and Trade-offs
+## 16.2 Key Design Constraints & Trade-offs
 
 The pipeline was shaped by several practical constraints:
 
@@ -4063,7 +4139,7 @@ The results also showed that a universal precision-oriented strategy is not opti
 This means the correct design lesson is not simply “use stricter transformer validation.” The better conclusion is that validation should be entity-specific: ambiguous entity types benefit from conservative transformer filtering, while already reliable rule-based outputs may require lighter validation, lower thresholds, or bypass logic.
 
 ##
-## 16.5 Core Insights and Practical Implications
+## 16.5 Core Insights & Practical Implications
 
 The main methodological insight is that clinical NLP systems should be designed around the intended use of their outputs, not around model complexity alone.
 
@@ -4096,7 +4172,7 @@ This project delivers an end-to-end hybrid clinical NLP pipeline, but several co
 These limitations position the system as a research-focused clinical NLP and data engineering project, not a clinically deployable information extraction service.
 
 ##
-## 17.2 Data, Annotation, and Generalisability
+## 17.2 Data & Generalisability
 
 The pipeline was developed on a filtered MIMIC-IV ICU note corpus. Although this provides realistic clinical text, it remains a single-source retrospective dataset. Key constraints:
 
@@ -4108,7 +4184,7 @@ The pipeline was developed on a filtered MIMIC-IV ICU note corpus. Although this
 These constraints mean that reported performance should be interpreted as internal validation on a controlled retrospective corpus, not evidence of broad clinical robustness.
 
 ##
-## 17.3 Extraction and Validation Limitations
+## 17.3 Extraction & Validation Limitations
 
 The pipeline depends on rule-based extraction before transformer validation. This provides exact span provenance and schema control, but also bounds recall: if the rule layer fails to generate a candidate entity, the transformer cannot recover it.
 
@@ -4131,7 +4207,7 @@ Finally, the precision-oriented threshold reduced false positives but also reduc
 The evaluation therefore demonstrates internal pipeline behaviour and component-level trade-offs, but does not establish external generalisability or clinical effectiveness.
 
 ##
-## 17.5 Scope and Output Limitations
+## 17.5 Scope & Output Limitations
 
 The entity schema is intentionally limited to `SYMPTOM`, `INTERVENTION`, and `CLINICAL_CONDITION`. This keeps the project focused and auditable, but limits clinical coverage. The system does not currently support:
 
@@ -4146,7 +4222,7 @@ The entity schema is intentionally limited to `SYMPTOM`, `INTERVENTION`, and `CL
 These are deliberate scope exclusions. Adding them would require additional extraction logic, normalisation rules, terminology mapping, annotation, and validation. The current JSON output is suitable for inspection and downstream ML feature generation, but it is not a formal interoperability standard.
 
 ##
-## 17.6 Deployment and Clinical Integration Limitations
+## 17.6 Deployment & Clinical Integration Limitations
 
 The deployed FastAPI service demonstrates production-style inference, but it is not a full production or MLOps system.
 
@@ -4169,7 +4245,7 @@ The deployed API should therefore be interpreted as an inference-only demonstrat
 
 # 18. Future Work
 
-## 18.1 Overview and Rationale
+## 18.1 Overview & Rationale
 
 Future work should focus on improving validation robustness, expanding clinical coverage, strengthening evaluation, and progressing the deployed API toward a more complete production-style system.
 
@@ -4184,7 +4260,7 @@ Future progress centres on five directions:
 These extensions would move the system from a research-focused clinical NLP pipeline toward a more robust, generalisable, and operationally maintainable extraction service.
 
 ##
-## 18.2 Validation and Model Improvements
+## 18.2 Validation & Model Improvements
 
 The most important technical extension is to replace the current uniform validation strategy with entity-specific validation policies.
 
@@ -4198,7 +4274,7 @@ Evaluation showed that BioClinicalBERT validation improved output quality for `I
 These changes would preserve the benefits of transformer validation while reducing avoidable recall loss.
 
 ##
-## 18.3 Annotation and Evaluation Enhancements
+## 18.3 Annotation & Evaluation Enhancements
 
 The validation model was trained on a limited manually annotated dataset. Future work should strengthen both annotation quality and evaluation robustness. Key extensions include:
 
@@ -4211,7 +4287,7 @@ The validation model was trained on a limited manually annotated dataset. Future
 These steps would clarify whether the pipeline generalises beyond MIMIC-IV ICU notes and whether the extracted entities are useful in practical research workflows.
 
 ##
-## 18.4 Schema, Context, and Downstream Modelling
+## 18.4 Schema, Context, & Downstream Modelling
 
 The current schema is intentionally limited to `SYMPTOM`, `INTERVENTION`, and `CLINICAL_CONDITION`. Future versions could expand coverage while preserving auditability and schema control. Potential extensions include:
 
@@ -4226,7 +4302,7 @@ Structured metadata could support cohort stratification, subgroup analysis, temp
 The priority should be controlled extension rather than broad entity expansion. New output categories should be added only where they improve downstream utility without compromising precision or interpretability.
 
 ##
-## 18.5 Deployment and MLOps Extensions
+## 18.5 Deployment & MLOps Extensions
 
 Future work should extend the inference-only deployment toward a more complete MLOps system. Priority extensions include:
 
@@ -4242,7 +4318,7 @@ These additions would improve maintainability, observability, and operational ro
 
 ---
 
-# 19. Potential Clinical and Research Integration
+# 19. Potential Clinical & Research Integration
 
 ## 19.1 Downstream Use Cases
 
@@ -4356,15 +4432,15 @@ Hybrid-Clinical-Notes-Extraction-Pipeline/
 ├── .gcloudignore                        # Excludes local data, outputs, caches, and environments from Cloud Build context
 ├── .dockerignore                        # Excludes local data, outputs, caches, and environments from Docker build context
 ├── .gitignore                           # Excludes local data, generated datasets, caches, and environments
-├── .gitattributes                       # Git LFS tracking for model artefacts
+├── .gitattributes                       # Git LFS tracking for model artifacts
 └── README.md                            # Project documentation
 ```
 
-Raw MIMIC-IV data, processed corpus files, full generated entity datasets, row-level prediction outputs, local environments, cache files, and private credentials are not committed to the repository. Only source code, deployment configuration, model artefacts required for inference, documentation, diagrams, and summary-level evaluation artefacts are included.
+Raw MIMIC-IV data, processed corpus files, full generated entity datasets, row-level prediction outputs, local environments, cache files, and private credentials are not committed to the repository. Only source code, deployment configuration, model artifacts required for inference, documentation, diagrams, and summary-level evaluation artifacts are included.
 
 ---
 
-# 21. Local Setup and Reproduction
+# 21. Local Setup & Reproduction
 
 ## 21.1 Run the API Locally
 
