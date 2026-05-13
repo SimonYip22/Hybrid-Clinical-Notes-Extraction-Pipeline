@@ -14,7 +14,7 @@ Cloud-deployed hybrid clinical NLP system for converting unstructured ICU progre
 
 The pipeline uses a hybrid extraction-validation architecture. Deterministic, section-aware regex rules first extract span-aligned candidate entities from ICU notes across three clinically meaningful categories: `SYMPTOM`, `INTERVENTION`, and `CLINICAL_CONDITION`. This rule-based layer is designed to provide broad candidate coverage, schema control, and exact text provenance. 
 
-A fine-tuned BioClinicalBERT classifier then validates each candidate in sentence context. This transformer layer handles contextual ambiguity such as intent, negation, temporality, and uncertainty. The model was fine-tuned using **1,200 manually annotated entity examples**, with threshold tuning used to prioritise precision for the final structured outputs.
+A fine-tuned [BioClinicalBERT](https://huggingface.co/emilyalsentzer/Bio_ClinicalBERT) classifier then validates each candidate in sentence context. This transformer layer handles contextual ambiguity such as intent, negation, temporality, and uncertainty. The model was fine-tuned using **1,200 manually annotated entity examples**, with threshold tuning used to prioritise precision for the final structured outputs.
 
 The system was developed on a filtered PhysioNet MIMIC-IV ICU note corpus of **162,296 progress reports across 32,910 ICU stays**. Full-corpus execution generated **780,941 candidate entities**, of which **319,852** were classified as valid after transformer validation (**40.96% retained**).
 
@@ -4603,6 +4603,15 @@ This project uses data derived from the MIMIC-IV database. MIMIC-IV access is co
 
 - Goldberger, A., Amaral, L., Glass, L., Hausdorff, J., Ivanov, P. C., Mark, R., ... & Stanley, H. E. (2000). PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals. Circulation [Online]. 101 (23), pp. e215–e220. RRID:SCR_007345.
 
+
+### Transformer Model
+
+This project uses BioClinicalBERT as the core transformer model for contextual validation. The model weights were fine-tuned on a custom annotated dataset derived from MIMIC-IV notes.
+
+- Alsentzer, E., et al. (2019). **Publicly Available Clinical BERT Embeddings**. *ClinicalNLP Workshop at NAACL*. arXiv:1904.03323 [https://doi.org/10.48550/arXiv.1904.03323](https://doi.org/10.48550/arXiv.1904.03323)
+- Alsentzer, E., et al. (2019). Bio_ClinicalBERT [Model]. Hugging Face. [https://huggingface.co/emilyalsentzer/Bio_ClinicalBERT](https://huggingface.co/emilyalsentzer/Bio_ClinicalBERT)
+
+
 ### Related Prior Work
 
 This project complements the author’s previous ICU structured-data modelling project:
@@ -4620,7 +4629,7 @@ All project-specific implementation decisions, code integration, testing, evalua
 ---
 
 **Project Status:** Core Development Complete  
-**Last Updated:** 4th May 2026  
+**Last Updated:** 12th May 2026  
 **Author & Maintainer:** Simon Yip - simon.yip@city.ac.uk
 
 ---
